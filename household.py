@@ -1,5 +1,6 @@
 """Small SMS scheduling domain. Python 3.11+, standard library only."""
 import json
+import os
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -218,7 +219,8 @@ class Scheduler:
                  'members': {phone: {'name': parsed.get('name') or 'Organizer', 'windows': [], 'rsvp': 'pending'}}}
             events[code] = e
             self.state['drafts'].pop(phone, None)
-            self.say(phone, f"[{code}] {e['title']} for {count} adults replying, {minutes} min. Times: {e['timezone']}. Forward: Text {code} and when you're free to this number. Reply STOP to opt out.")
+            number = os.getenv('TELNYX_PHONE_NUMBER') or '[scheduling number]'
+            self.say(phone, f"[{code}] {e['title']} for {count} adults replying, {minutes} min. Times: {e['timezone']}. Forward: Text {code} and when you're free to {number}. Reply STOP to opt out.")
             if not parsed.get('windows'):
                 self.say(phone, f"[{code}] When are you free? Tell me dates and a time range in your own words.")
                 return

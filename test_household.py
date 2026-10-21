@@ -1,6 +1,8 @@
 import base64
 import json
 import tempfile
+import threading
+import time
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -162,6 +164,46 @@ class SchedulingTests(unittest.TestCase):
 
 
 class SecurityTests(unittest.TestCase):
+    def test_real_http_webhook_enqueues_once_and_rejects_unsigned(self):
+        import os
+        from http.server import ThreadingHTTPServer
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+        from server import Handler
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+        key = Ed25519PrivateKey.generate()
+        public = base64.b64encode(key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
+            'DATABASE_PATH': folder + '/db', 'TELNYX_PUBLIC_KEY': public,
+            'TELNYX_PHONE_NUMBER': '+15555550101'
+        }):
+            server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                body = json.dumps({'data': {'event_type': 'message.received', 'payload': {
+                    'id': 'unique-message', 'from': {'phone_number': '+15555550102'},
+                    'to': [{'phone_number': '+15555550101'}], 'text': 'Plan a playdate'
+                }}}).encode()
+                url = f'http://127.0.0.1:{server.server_port}/sms'
+                ts = str(int(time.time()))
+                signature = base64.b64encode(key.sign(ts.encode() + b'|' + body)).decode()
+                for _ in range(2):
+                    request = Request(url, data=body, headers={'telnyx-timestamp': ts, 'telnyx-signature-ed25519': signature})
+                    with urlopen(request) as response:
+                        self.assertEqual(response.status, 200)
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(Request(url, data=body))
+                self.assertEqual(error.exception.code, 403)
+                store = Store(folder + '/db')
+                self.assertEqual(store.db.execute('SELECT count(*) FROM inbox').fetchone()[0], 1)
+                store.db.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
     def test_signature_tamper_and_replay(self):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
         from cryptography.hazmat.primitives import serialization
