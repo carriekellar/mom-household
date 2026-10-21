@@ -50,6 +50,28 @@ There are no unsolicited outbound invitations: each participant texts the servic
 The organizer supplies the expected number of adult respondents, including themselves.
 The service never interprets missing responses as agreement.
 
+## Railway deployment
+
+The included Dockerfile packages only application source and dependencies. It excludes `.env`,
+databases, and local files. `railway.toml` selects Docker, one replica, and the health check.
+
+1. Sign in to Railway (`railway login` for CLI access).
+2. Create a project/service from this repository. Until PR #1 is merged, select the
+   `feat/sms-scheduling` branch; `main` does not yet contain the application.
+3. Attach a persistent volume mounted at `/data`. The container defaults to
+   `DATABASE_PATH=/data/household.sqlite3`. Do not override it with the local example path.
+4. Add `OPENAI_API_KEY`, `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, and
+   `TELNYX_PHONE_NUMBER` as private service variables. Optionally set `OPENAI_MODEL` and
+   `HOUSEHOLD_TIMEZONE`. Let Railway supply `PORT`.
+5. Keep one replica and disable sleeping/serverless mode so reminders run continuously.
+6. Deploy, generate a public domain, and configure `https://YOUR-DOMAIN/sms` on the Telnyx
+   messaging profile. Test with an opt-in group before inviting others.
+
+Hosting and number purchase require your own accounts and billing setup. Deployment configuration
+is prepared but does not create paid resources automatically. See Railway's
+[Dockerfile guide](https://docs.railway.com/builds/dockerfiles) and
+[persistent volume guide](https://docs.railway.com/volumes).
+
 ## Conversation
 
 ```text
