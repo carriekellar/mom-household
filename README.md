@@ -8,10 +8,10 @@ to confirm, sends reminders, and handles cancellations.
 
 ## Status
 
-First working backend prototype. Telnyx SMS integration, OpenAI natural-language extraction,
-SQLite persistence, confirmations, reminders, and cancellations are implemented. The automated
-tests and offline demo run without credentials. **Live carrier delivery and live AI extraction
-have not yet been verified.** No texting number is provisioned and nothing is deployed.
+Backend prototype with Telnyx texting, availability matching, confirmations, reminders, and
+cancellations. Vercel handlers and Supabase Postgres persistence are implemented; the local
+SQLite demo remains available. A Telnyx number is provisioned. **Not yet deployed or verified
+with live group texting.** Telnyx credentials/account access and OpenAI API credit need resolving.
 
 ## Try the offline demo
 
@@ -50,27 +50,45 @@ There are no unsolicited outbound invitations: each participant texts the servic
 The organizer supplies the expected number of adult respondents, including themselves.
 The service never interprets missing responses as agreement.
 
-## Railway deployment
+## Vercel + Supabase deployment (preferred)
 
-The included Dockerfile packages only application source and dependencies. It excludes `.env`,
-databases, and local files. `railway.toml` selects Docker, one replica, and the health check.
+1. Create a Supabase project. Apply `supabase/migrations/202610210001_household.sql`
+   in its SQL editor. Family data lives in the private `household` schema, with RLS enabled
+   and no browser policies. Do not expose this schema through the Data API.
+2. Import this GitHub repository into Vercel using framework preset **Other**. Select
+   `feat/sms-scheduling` until PR #1 is merged; `main` does not contain the app yet.
+3. Set private production environment variables: `DATABASE_URL`, `CRON_SECRET`,
+   `OPENAI_API_KEY`, `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, `TELNYX_PHONE_NUMBER`.
+   Optionally set `OPENAI_MODEL` and `HOUSEHOLD_TIMEZONE`. Never use public-prefixed secrets.
+   Use Supabase's **session pooler** (port 5432) or a direct database connection, with
+   `sslmode=require`. Transaction pooling (port 6543) is not supported: the worker uses a
+   session advisory lock. Generate a random `CRON_SECRET` locally (at least 32 random bytes).
+4. Deploy with Fluid Compute enabled and a 300-second function duration. `/health` checks
+   HTTP liveness only. Production webhooks must be reachable by Telnyx and Supabase without
+   an interactive login; preview deployments must not share production provider/database keys.
+5. Enable `pg_cron` and `pg_net` in Supabase Extensions. Add `household_url` (production
+   Vercel origin) and `household_cron_secret` (matching `CRON_SECRET`) in Supabase Vault.
+   Run `supabase/schedule.sql`. It invokes `/api/process` once per minute.
+6. Set Telnyx's messaging profile webhook to `https://YOUR-DOMAIN/sms`, then test with a
+   consenting group. A reply normally waits for the next minute's processing tick; heavier
+   traffic can take longer. Reminders do not depend on an always-running server.
 
-1. Sign in to Railway (`railway login` for CLI access).
-2. Create a project/service from this repository. Until PR #1 is merged, select the
-   `feat/sms-scheduling` branch; `main` does not yet contain the application.
-3. Attach a persistent volume mounted at `/data`. The container defaults to
-   `DATABASE_PATH=/data/household.sqlite3`. Do not override it with the local example path.
-4. Add `OPENAI_API_KEY`, `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, and
-   `TELNYX_PHONE_NUMBER` as private service variables. Optionally set `OPENAI_MODEL` and
-   `HOUSEHOLD_TIMEZONE`. Let Railway supply `PORT`.
-5. Keep one replica and disable sleeping/serverless mode so reminders run continuously.
-6. Deploy, generate a public domain, and configure `https://YOUR-DOMAIN/sms` on the Telnyx
-   messaging profile. Test with an opt-in group before inviting others.
+The signed webhook only inserts into a durable inbox. A bounded worker processes up to three
+incoming texts per run, then sends queued responses. A database lock prevents overlapping
+workers from processing or sending twice. State changes, replies, and inbound completion commit
+atomically. Interrupted/ambiguous sends require review instead of blind retries. Delivery
+callbacks are retained even if they arrive before the send response.
 
-Hosting and number purchase require your own accounts and billing setup. Deployment configuration
-is prepared but does not create paid resources automatically. See Railway's
-[Dockerfile guide](https://docs.railway.com/builds/dockerfiles) and
-[persistent volume guide](https://docs.railway.com/volumes).
+Monitor `household.inbox` and `household.outbox` for `needs_review`, `cron.job_run_details`
+for scheduling failures, and `net._http_response` for HTTP failures. A successful cron SQL
+execution alone does not mean the HTTP request succeeded. Inspect provider records before
+requeuing any ambiguous send. Do not enable the cron job on preview databases.
+
+The Dockerfile and `railway.toml` remain an optional single-instance SQLite deployment path.
+Do not use SQLite or `server.py` as the Vercel worker.
+
+See [Vercel Python functions](https://vercel.com/docs/functions/runtimes/python)
+and [Supabase scheduled HTTP requests](https://supabase.com/docs/guides/functions/schedule-functions).
 
 ## Conversation
 
@@ -105,7 +123,9 @@ automatically restore an RSVP.
 - `household.py`: deterministic state machine, interval intersection, SQLite inbox/outbox.
 - `language.py`: Responses API with Structured Outputs; no model access to SMS tools.
 - `transport.py`: Telnyx send API, Ed25519 signature verification, queued delivery.
-- `server.py`: authenticated webhook endpoint and background worker.
+- `server.py`: local SQLite webhook endpoint and background worker.
+- `cloud.py`, `api/`: Vercel signed webhook and authenticated scheduled worker.
+- `postgres.py`, `supabase/`: Postgres persistence, private schema, and cron setup.
 - `demo.py`, `test_household.py`: offline walkthrough and behavioral tests.
 
 Inbound message IDs are unique, preventing duplicate processing on webhook retries. Webhook
@@ -129,9 +149,9 @@ errors retry up to three times, then need operator review. This prototype has no
 - Invitation codes are bearer invitations. Keep them within the group. Group members' raw
   availability and phone numbers are not broadcast to other participants.
 - Phone numbers, availability, conversation clarifications, and message bodies are stored
-  in the local database. Relevant user text is sent to OpenAI for parsing with `store: false`.
+  in the configured database. Relevant user text is sent to OpenAI for parsing with `store: false`.
   Secure the disk and establish retention/deletion and a privacy notice before a public pilot.
-- Single instance only. Before opening to strangers, add per-number abuse limits, spending
+- The Postgres MVP serializes work through one shared state record. Before opening to strangers, add per-number abuse limits, spending
   controls, operational alerts, a retention job, and a live carrier/AI acceptance test.
 
 ## Integration references
