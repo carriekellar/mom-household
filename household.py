@@ -219,7 +219,7 @@ class Scheduler:
                  'members': {phone: {'name': parsed.get('name') or 'Organizer', 'windows': [], 'rsvp': 'pending'}}}
             events[code] = e
             self.state['drafts'].pop(phone, None)
-            number = os.getenv('TELNYX_PHONE_NUMBER') or '[scheduling number]'
+            number = os.getenv('PLIVO_PHONE_NUMBER' if os.getenv('SMS_PROVIDER', 'plivo') == 'plivo' else 'TELNYX_PHONE_NUMBER') or '[scheduling number]'
             self.say(phone, f"[{code}] {e['title']} for {count} adults replying, {minutes} min. Times: {e['timezone']}. Forward: Text {code} and when you're free to {number}. Reply STOP to opt out.")
             if not parsed.get('windows'):
                 self.say(phone, f"[{code}] When are you free? Tell me dates and a time range in your own words.")

@@ -1,4 +1,4 @@
-"""Telnyx SMS adapter and signed webhook validation."""
+"""SMS provider dispatch, legacy Telnyx adapter, and durable delivery."""
 import base64
 import json
 import os
@@ -17,6 +17,9 @@ def verify(raw, headers, public_key, now=None):
 
 
 def send(phone, text):
+    if provider() == "plivo":
+        from plivo_sms import send as plivo_send
+        return plivo_send(phone, text)
     body = {'from': os.environ['TELNYX_PHONE_NUMBER'], 'to': phone, 'text': text}
     request = Request('https://api.telnyx.com/v2/messages', data=json.dumps(body).encode(),
                       headers={'Authorization': 'Bearer ' + os.environ['TELNYX_API_KEY'], 'Content-Type': 'application/json'})
@@ -49,3 +52,38 @@ def deliver(store, sender=send):
         with store.db:
             store.db.execute("UPDATE outbox SET status='accepted', provider_sid=? WHERE id=?", (provider_id, row['id']))
     return True
+
+
+def provider():
+    value = os.getenv('SMS_PROVIDER', 'plivo')
+    if value not in ('plivo', 'telnyx'):
+        raise ValueError('Unknown SMS_PROVIDER')
+    return value
+
+
+def verify_webhook(raw, headers):
+    if provider() == 'plivo':
+        from plivo_sms import verify as plivo_verify
+        plivo_verify(headers)
+    else:
+        verify(raw, headers, os.environ['TELNYX_PUBLIC_KEY'])
+
+
+def decode_webhook(raw):
+    if provider() == 'plivo':
+        from plivo_sms import decode
+        return decode(raw)
+    import re
+    data = json.loads(raw)['data']
+    p = data['payload']
+    if data['event_type'] == 'message.received':
+        phone, body = p['from']['phone_number'], p.get('text') or ''
+        if not re.fullmatch(r'\+[1-9]\d{7,14}', phone) or not isinstance(body, str) or len(body) > 1600:
+            raise ValueError('Invalid SMS')
+        if not any(t['phone_number'] == os.environ['TELNYX_PHONE_NUMBER'] for t in p['to']):
+            raise ValueError('Wrong recipient')
+        return ('received', p['id'], phone, body)
+    if data['event_type'] == 'message.finalized':
+        statuses = [t.get('status') for t in p.get('to', [])]
+        return ('finalized', p['id'], None, 'delivered' if statuses and all(s == 'delivered' for s in statuses) else 'failed')
+    return ('ignored', None, None, None)

@@ -1,15 +1,13 @@
 """Run behind HTTPS reverse proxy; one instance with a persistent SQLite volume."""
-import json
 import logging
 import os
-import re
 import threading
 import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from household import Store, UTC
 from language import parse
-from transport import deliver, verify
+from transport import deliver, verify_webhook, decode_webhook
 
 log = logging.getLogger('household')
 
@@ -76,25 +74,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(413)
             self.connection.settimeout(5)
             raw = self.rfile.read(length)
-            verify(raw, self.headers, os.environ['TELNYX_PUBLIC_KEY'])
+            verify_webhook(raw, self.headers)
         except Exception:
             return self.reply(403)
         store = database()
         try:
-            data = json.loads(raw)['data']
-            payload = data['payload']
-            if data['event_type'] == 'message.received':
-                phone, body = payload['from']['phone_number'], payload.get('text') or ''
-                if not re.fullmatch(r'\+[1-9]\d{7,14}', phone) or len(body) > 1600:
-                    return self.reply(400)
-                if not any(t['phone_number'] == os.environ['TELNYX_PHONE_NUMBER'] for t in payload['to']):
-                    return self.reply(400)
-                store.enqueue(payload['id'], phone, body)
-            elif data['event_type'] == 'message.finalized':
-                statuses = [t.get('status') for t in payload.get('to', [])]
+            kind, sid, phone, value = decode_webhook(raw)
+            if kind == 'received':
+                store.enqueue(sid, phone, value)
+            elif kind == 'finalized':
                 with store.db:
-                    store.db.execute('UPDATE outbox SET status=? WHERE provider_sid=?',
-                                     ('delivered' if statuses and all(s == 'delivered' for s in statuses) else 'failed', payload['id']))
+                    store.db.execute('UPDATE outbox SET status=? WHERE provider_sid=?', (value, sid))
             self.reply(200)
         except (KeyError, ValueError, TypeError):
             self.reply(400)
@@ -104,7 +94,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     load_env()
-    required = ['OPENAI_API_KEY', 'TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_PHONE_NUMBER']
+    from transport import provider
+    required = ['OPENAI_API_KEY'] + (['PLIVO_AUTH_ID', 'PLIVO_AUTH_TOKEN', 'PLIVO_PHONE_NUMBER', 'PLIVO_WEBHOOK_URL'] if provider() == 'plivo' else ['TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_PHONE_NUMBER'])
     missing = [key for key in required if not os.getenv(key)]
     if missing:
         raise SystemExit('Set these in .env: ' + ', '.join(missing))

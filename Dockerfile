@@ -3,6 +3,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DATABASE_PATH=/data/household.s
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && mkdir -p /data
-COPY household.py language.py transport.py server.py ./
+COPY household.py language.py transport.py plivo_sms.py server.py ./
 EXPOSE 8000
 CMD ["python", "server.py"]

@@ -175,7 +175,7 @@ class SecurityTests(unittest.TestCase):
         key = Ed25519PrivateKey.generate()
         public = base64.b64encode(key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
-            'DATABASE_PATH': folder + '/db', 'TELNYX_PUBLIC_KEY': public,
+            'DATABASE_PATH': folder + '/db', 'SMS_PROVIDER': 'telnyx', 'TELNYX_PUBLIC_KEY': public,
             'TELNYX_PHONE_NUMBER': '+15555550101'
         }):
             server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)

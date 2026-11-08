@@ -47,7 +47,7 @@ class CloudSecurityTests(unittest.TestCase):
         }}}).encode()
         ts = str(int(time.time()))
         headers = {'telnyx-timestamp': ts, 'telnyx-signature-ed25519': base64.b64encode(key.sign(ts.encode() + b'|' + raw)).decode()}
-        with patch.dict(os.environ, {'TELNYX_PUBLIC_KEY': public, 'TELNYX_PHONE_NUMBER': '+15555550101'}), patch('cloud.PostgresStore') as store:
+        with patch.dict(os.environ, {'SMS_PROVIDER': 'telnyx', 'TELNYX_PUBLIC_KEY': public, 'TELNYX_PHONE_NUMBER': '+15555550101'}), patch('cloud.PostgresStore') as store:
             with self.assertRaises(HTTPError) as error:
                 urlopen(Request(url, data=raw))
             self.assertEqual(error.exception.code, 403)
