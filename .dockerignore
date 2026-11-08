@@ -1,0 +1,7 @@
+*
+!Dockerfile
+!requirements.txt
+!household.py
+!language.py
+!transport.py
+!server.py

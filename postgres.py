@@ -1,0 +1,106 @@
+"""Supabase persistence. Requires a direct or SESSION-mode pooler connection."""
+import json
+import os
+from contextlib import contextmanager
+import psycopg
+from psycopg.rows import dict_row
+from household import Scheduler, stamp, permitted_message, label
+from transport import send, send_limit
+from plan_dates import reminder_schedule
+
+
+class PostgresStore:
+    def __init__(self):
+        self.db = psycopg.connect(os.environ['DATABASE_URL'], autocommit=True,
+                                 row_factory=dict_row, connect_timeout=5)
+        self.db.execute('SET search_path TO household, public')
+        self.db.execute("SET statement_timeout = '10s'")
+
+    def load(self):
+        return self.db.execute('SELECT body FROM state WHERE id=1').fetchone()['body']
+
+    def enqueue(self, sid, phone, body):
+        self.db.execute('INSERT INTO inbox(sid,phone,body) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', (sid, phone, body))
+
+    def finalized(self, sid, status):
+        # Retain callbacks even when they arrive before the send response.
+        with self.db.transaction():
+            self.db.execute('INSERT INTO receipts(sid,status) VALUES(%s,%s) ON CONFLICT(sid) DO UPDATE SET status=excluded.status', (sid, status))
+            self.db.execute('UPDATE outbox SET status=%s WHERE provider_sid=%s', (status, sid))
+
+    @contextmanager
+    def worker(self):
+        # Session lock survives per-message commits; never use transaction pooling.
+        locked = self.db.execute('SELECT pg_try_advisory_lock(748219301) AS locked').fetchone()['locked']
+        try:
+            if locked:
+                self.db.execute("UPDATE outbox SET status='needs_review' WHERE status='sending'")
+            if locked:
+                self.db.execute("UPDATE outbox o SET status=r.status FROM receipts r WHERE o.provider_sid=r.sid AND o.status IS DISTINCT FROM r.status")
+            yield locked
+        finally:
+            if locked:
+                self.db.execute('SELECT pg_advisory_unlock(748219301)')
+
+    def save(self, state, messages):
+        self.db.execute('UPDATE state SET body=%s::jsonb WHERE id=1', (json.dumps(state),))
+        with self.db.cursor() as cursor:
+            cursor.executemany('INSERT INTO outbox(phone,body,event,version) VALUES(%s,%s,%s,%s)', messages)
+
+    def process(self, parser, now):
+        row = self.db.execute("SELECT * FROM inbox WHERE status='pending' ORDER BY id LIMIT 1").fetchone()
+        if not row:
+            return False
+        state = self.load()
+        app = Scheduler(state, parser, now)
+        try:
+            app.receive(row['phone'], row['body'])
+        except (ValueError, KeyError, TypeError):
+            state = self.load()
+            app = Scheduler(state, parser, now)
+            app.say(row['phone'], 'I could not safely read that. Please restate which dates work; include start/end times only for a timed event.')
+        except Exception:
+            self.db.execute("UPDATE inbox SET attempts=attempts+1, status=CASE WHEN attempts>=2 THEN 'needs_review' ELSE 'pending' END WHERE sid=%s", (row['sid'],))
+            raise
+        with self.db.transaction():
+            if row['phone'] in state['blocked']:
+                self.db.execute("UPDATE outbox SET status='suppressed' WHERE phone=%s AND status='pending'", (row['phone'],))
+            self.save(state, app.messages)
+            self.db.execute("UPDATE inbox SET status='done' WHERE sid=%s", (row['sid'],))
+        return True
+
+    def remind(self, now):
+        state = self.load()
+        app = Scheduler(state, None, now)
+        for event in state['events'].values():
+            if event['status'] != 'confirmed':
+                continue
+            for kind, due in reminder_schedule(event):
+                key = f"{event['version']}:{kind}"
+                if 0 <= (now - due).total_seconds() <= 900 and key not in event['reminders']:
+                    app.broadcast(event, f"Reminder: {app.details(event)}. \n\nCan't make it? Just reply.\nSwitch to this plan: {label(event)}.")
+                    event['reminders'].append(key)
+        with self.db.transaction():
+            self.save(state, app.messages)
+
+    def deliver(self, sender=send):
+        row = self.db.execute("SELECT * FROM outbox WHERE status='pending' ORDER BY id LIMIT 1").fetchone()
+        if not row:
+            return False
+        state = self.load()
+        event = state['events'].get(row['event'])
+        stale = event and (event['version'] != row['version'] or event['members'].get(row['phone'], {}).get('rsvp') == 'declined')
+        if stale or not permitted_message(state, row['phone'], row['body']):
+            self.db.execute("UPDATE outbox SET status='suppressed' WHERE id=%s", (row['id'],))
+            return True
+        used = self.db.execute("SELECT count(*) AS n FROM outbox WHERE status NOT IN ('pending','suppressed')").fetchone()['n']
+        if used >= send_limit():
+            return False
+        self.db.execute("UPDATE outbox SET status='sending' WHERE id=%s", (row['id'],))
+        try:
+            sid = sender(row['phone'], row['body'])
+        except Exception as exc:
+            self.db.execute("UPDATE outbox SET status='needs_review',error=%s WHERE id=%s", (type(exc).__name__, row['id']))
+        else:
+            self.db.execute("UPDATE outbox SET provider_sid=%s,status=COALESCE((SELECT status FROM receipts WHERE sid=%s),'accepted') WHERE id=%s", (sid, sid, row['id']))
+        return True
