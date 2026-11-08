@@ -193,3 +193,20 @@ This is not a Twilio credit counter: multipart messages, incoming texts, provide
 responses, and sends made elsewhere can affect the provider allowance separately. Check the
 Twilio dashboard before a live pilot. Increasing the cap later releases pending messages;
 review the queue first, including any old reminders.
+
+## Work Wife registration page drafts
+
+The consumer product is now **Work Wife**. Static drafts live in `public/`:
+
+- `index.html`: opt-in invitation, proposed JOIN → Y transcript, and proof preparation notes.
+- `privacy.html`: Privacy Policy draft reflecting the prototype's data handling.
+- `terms.html`: Terms & Conditions draft with SMS disclosures and support information.
+
+Preview with `python3 -m http.server 8765 --directory public`. Vercel serves `public`
+with aliases `/opt-in`, `/privacy`, and `/terms`; the existing Python API rewrites remain.
+These pages are drafts, not evidence of a live opt-in system. Before registration, finalize
+retention and provider details, implement and test enrollment and keyword responses,
+replace `[SITE URL]` with the deployed origin, and review policies with the operator.
+Only remove draft notices when the described behavior is actually available. Support is
+`carrie@candur.ai`; the operator is Carrington Hay Kellar. No SMS flow or provider settings
+are changed by these static pages.
