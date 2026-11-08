@@ -287,15 +287,24 @@ class Scheduler:
             self.say(phone, '\n'.join(f"{'Active: ' if selected == e['code'] else ''}{e['title']} — {e['status']}. Switch: {label(e)}" for e in active)
                      or 'No active plans. Tell me what you want to organize.')
             return
-        new = upper.startswith('NEW ')
+        starting_new = upper == 'NEW' or upper.startswith('NEW ')
+        if starting_new:
+            self.state['drafts'].pop(phone, None)
+            code = None
+        # A creation clarification is a conversation of its own. Do not fall
+        # back to the previously selected event for short answers like '3'.
+        new = starting_new or (bool(self.state['drafts'].get(phone)) and not code)
         named = body[7:].strip() if upper.startswith('SWITCH ') else body
         titles = [event for event in active if event['title'].casefold() == named.casefold()]
-        if not code and len(titles) == 1:
+        if not starting_new and not code and len(titles) == 1:
             code = titles[0]['code']
             tokens = []
         elif not code and (upper.startswith('SWITCH ') or len(titles) > 1):
             self.say(phone, 'Select a plan by its invitation code: ' + ', '.join(label(e) for e in active))
             return
+        if code:
+            self.state['drafts'].pop(phone, None)
+            new = False
         selected = self.state['threads'].get(phone)
         if selected and not any(e['code'] == selected for e in active):
             self.state['threads'].pop(phone, None)

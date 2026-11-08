@@ -51,6 +51,45 @@ class ThreadCalendarTests(unittest.TestCase):
         self.text('sarah', 'park-playdate-maple-river-48271')
         self.assertEqual(self.store.load()['threads']['sarah'], code)
 
+    def test_new_plan_followups_never_return_to_selected_plan(self):
+        from unittest.mock import Mock
+        from household import Scheduler
+        old = self.plan()
+        state = self.store.load()
+        original = json.loads(json.dumps(state['events'][old]))
+        parser = Mock(side_effect=[
+            {'intent':'create', 'question':'How many adults including you?'},
+            {'intent':'create', 'question':'What time is school pickup?'},
+            create(),
+        ])
+        app = Scheduler(state, parser, NOW)
+        app.receive('alex', 'NEW playdate next week after pickup')
+        app.receive('alex', '3')
+        app.receive('alex', '3pm to 5pm')
+        self.assertEqual(len(state['events']), 2)
+        self.assertEqual(state['events'][old], original)
+        self.assertNotEqual(state['threads']['alex'], old)
+        self.assertNotIn('alex', state['drafts'])
+        for call in parser.call_args_list:
+            self.assertIsNone(call.args[1]['event'])
+        self.assertIn({'user':'3'}, parser.call_args_list[2].args[1]['conversation'])
+
+    def test_explicit_switch_leaves_creation_and_new_restarts_it(self):
+        from unittest.mock import Mock
+        from household import Scheduler
+        old = self.plan()
+        state = self.store.load()
+        parser = Mock(return_value={'intent':'create','question':'How many adults?'})
+        app = Scheduler(state, parser, NOW)
+        app.receive('alex','NEW dinner')
+        app.receive('alex','PLANS')
+        self.assertIn('alex',state['drafts'])
+        app.receive('alex','NEW coffee')
+        self.assertEqual(state['drafts']['alex'][0],{'user':'NEW coffee'})
+        app.receive('alex',old)
+        self.assertNotIn('alex',state['drafts'])
+        self.assertEqual(state['threads']['alex'],old)
+
     def test_calendar_is_optional_and_only_sent_after_everyone_confirms(self):
         code = self.plan()
         self.text('alex', 'CALENDAR')
