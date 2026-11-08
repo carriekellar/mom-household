@@ -17,6 +17,9 @@ def verify(raw, headers, public_key, now=None):
 
 
 def send(phone, text):
+    if provider() == "twilio":
+        from twilio_sms import send as twilio_send
+        return twilio_send(phone, text)
     if provider() == "plivo":
         from plivo_sms import send as plivo_send
         return plivo_send(phone, text)
@@ -39,7 +42,7 @@ def deliver(store, sender=send):
             store.db.execute("UPDATE outbox SET status='suppressed' WHERE id=?", (row['id'],))
         return True
     # Persist before network I/O. Ambiguous sends are never blindly retried: that
-    # could send duplicate invitations/reminders. Operator reconciles with Telnyx.
+    # could send duplicate invitations/reminders. Operator reconciles with the SMS provider.
     with store.db:
         store.db.execute("UPDATE outbox SET status='sending' WHERE id=?", (row['id'],))
     try:
@@ -55,13 +58,16 @@ def deliver(store, sender=send):
 
 
 def provider():
-    value = os.getenv('SMS_PROVIDER', 'plivo')
-    if value not in ('plivo', 'telnyx'):
+    value = os.getenv('SMS_PROVIDER', 'twilio')
+    if value not in ('twilio', 'plivo', 'telnyx'):
         raise ValueError('Unknown SMS_PROVIDER')
     return value
 
 
 def verify_webhook(raw, headers):
+    if provider() == 'twilio':
+        from twilio_sms import verify as twilio_verify
+        return twilio_verify(raw, headers)
     if provider() == 'plivo':
         from plivo_sms import verify as plivo_verify
         plivo_verify(headers)
@@ -70,6 +76,9 @@ def verify_webhook(raw, headers):
 
 
 def decode_webhook(raw):
+    if provider() == 'twilio':
+        from twilio_sms import decode
+        return decode(raw)
     if provider() == 'plivo':
         from plivo_sms import decode
         return decode(raw)
@@ -87,3 +96,15 @@ def decode_webhook(raw):
         statuses = [t.get('status') for t in p.get('to', [])]
         return ('finalized', p['id'], None, 'delivered' if statuses and all(s == 'delivered' for s in statuses) else 'failed')
     return ('ignored', None, None, None)
+
+
+def phone_number():
+    return os.getenv(provider().upper() + '_PHONE_NUMBER', '')
+
+
+def required_settings():
+    return {
+        'twilio': ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WEBHOOK_URL'],
+        'plivo': ['PLIVO_AUTH_ID', 'PLIVO_AUTH_TOKEN', 'PLIVO_PHONE_NUMBER', 'PLIVO_WEBHOOK_URL'],
+        'telnyx': ['TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_PHONE_NUMBER'],
+    }[provider()]

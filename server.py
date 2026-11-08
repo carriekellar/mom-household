@@ -59,8 +59,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def reply(self, code):
         self.send_response(code)
-        self.send_header('Content-Length', '0')
+        body = b'<Response/>' if code == 200 and self.command == 'POST' else b''
+        self.send_header('Content-Type', 'application/xml')
+        self.send_header('Content-Length', str(len(body)))
         self.end_headers()
+        self.wfile.write(body)
 
     def do_GET(self):
         self.reply(200 if self.path == '/health' else 404)
@@ -94,8 +97,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     load_env()
-    from transport import provider
-    required = ['OPENAI_API_KEY'] + (['PLIVO_AUTH_ID', 'PLIVO_AUTH_TOKEN', 'PLIVO_PHONE_NUMBER', 'PLIVO_WEBHOOK_URL'] if provider() == 'plivo' else ['TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_PHONE_NUMBER'])
+    from transport import required_settings
+    required = ['OPENAI_API_KEY'] + required_settings()
     missing = [key for key in required if not os.getenv(key)]
     if missing:
         raise SystemExit('Set these in .env: ' + ', '.join(missing))

@@ -8,9 +8,9 @@ to confirm, sends reminders, and handles cancellations.
 
 ## Status
 
-Backend prototype with Plivo texting, availability matching, confirmations, reminders, and
+Backend prototype with Twilio texting, availability matching, confirmations, reminders, and
 cancellations. Vercel handlers and Supabase Postgres persistence are implemented; the local
-SQLite demo remains available. Plivo is the default provider; its account and number setup remain pending. **Not yet deployed or verified
+SQLite demo remains available. Twilio is the default provider; its account and number setup remain pending. **Not yet deployed or verified
 with live group texting.** Live provider credentials, registration, hosting, and an OpenAI extraction check remain required.
 
 ## Try the offline demo
@@ -31,17 +31,16 @@ pretend to test the language model or send real texts.
 
 ## Connect a real texting number
 
-1. Create a [Plivo account](https://cx.plivo.com/signup), complete account verification,
+1. Create a [Twilio account](https://www.twilio.com/try-twilio), complete account verification,
    and obtain an SMS-enabled US number. Complete toll-free verification or local-number
    10DLC registration before live group texting. Trial sends are limited to verified recipients.
-2. Copy `.env.example` to `.env`. Set `SMS_PROVIDER=plivo`, `PLIVO_AUTH_ID`,
-   `PLIVO_AUTH_TOKEN`, `PLIVO_PHONE_NUMBER` (E.164), and `OPENAI_API_KEY`.
+2. Copy `.env.example` to `.env`. Set `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`,
+   `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (E.164), and `OPENAI_API_KEY`.
    Keep credentials in the ignored `.env` file or private hosting variables.
-3. Set `PLIVO_WEBHOOK_URL` to the exact public HTTPS URL, including any trailing slash.
-   Create a Plivo Application with that **Message URL**, method **POST**, and assign the
-   number to it. The app uses the same URL for outbound delivery callbacks.
+3. Set `TWILIO_WEBHOOK_URL` to the exact public HTTPS URL, including any trailing slash.
+   Configure the Twilio number's **A message comes in** webhook to this URL, method **POST**. The app uses the same URL for outbound delivery callbacks.
 4. For local hosting, run `python server.py` behind HTTPS/a development tunnel. Vercel
-   uses `/sms` as described below. Enable Plivo's standard STOP/START handling and verify
+   uses `/sms` as described below. Enable Twilio's standard STOP/START handling and verify
    it during acceptance testing; the app also suppresses opted-out recipients.
 5. Local SQLite requires one continuously running instance and persistent storage.
    Vercel uses Supabase and scheduled processing instead. `/health` checks HTTP liveness only.
@@ -61,19 +60,19 @@ The service never interprets missing responses as agreement.
 2. Import this GitHub repository into Vercel using framework preset **Other**. Select
    `feat/sms-scheduling` until PR #1 is merged; `main` does not contain the app yet.
 3. Set private production environment variables: `DATABASE_URL`, `CRON_SECRET`,
-   `OPENAI_API_KEY`, `SMS_PROVIDER=plivo`, `PLIVO_AUTH_ID`, `PLIVO_AUTH_TOKEN`,
-   `PLIVO_PHONE_NUMBER`, and `PLIVO_WEBHOOK_URL`.
+   `OPENAI_API_KEY`, `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+   `TWILIO_PHONE_NUMBER`, and `TWILIO_WEBHOOK_URL`.
    Optionally set `OPENAI_MODEL` and `HOUSEHOLD_TIMEZONE`. Never use public-prefixed secrets.
    Use Supabase's **session pooler** (port 5432) or a direct database connection, with
    `sslmode=require`. Transaction pooling (port 6543) is not supported: the worker uses a
    session advisory lock. Generate a random `CRON_SECRET` locally (at least 32 random bytes).
 4. Deploy with Fluid Compute enabled and a 300-second function duration. `/health` checks
-   HTTP liveness only. Production webhooks must be reachable by Plivo and Supabase without
+   HTTP liveness only. Production webhooks must be reachable by Twilio and Supabase without
    an interactive login; preview deployments must not share production provider/database keys.
 5. Enable `pg_cron` and `pg_net` in Supabase Extensions. Add `household_url` (production
    Vercel origin) and `household_cron_secret` (matching `CRON_SECRET`) in Supabase Vault.
    Run `supabase/schedule.sql`. It invokes `/api/process` once per minute.
-6. Configure the Plivo Application Message URL (POST) and `PLIVO_WEBHOOK_URL` as
+6. Configure the Twilio number's incoming-message webhook (POST) and `TWILIO_WEBHOOK_URL` as
    `https://YOUR-DOMAIN/sms`, then test with a
    consenting group. A reply normally waits for the next minute's processing tick; heavier
    traffic can take longer. Reminders do not depend on an always-running server.
@@ -127,7 +126,7 @@ automatically restore an RSVP.
 
 - `household.py`: deterministic state machine, interval intersection, SQLite inbox/outbox.
 - `language.py`: Responses API with Structured Outputs; no model access to SMS tools.
-- `transport.py`, `plivo_sms.py`: provider dispatch, Plivo sending and signature validation, queued delivery.
+- `transport.py`, `twilio_sms.py`: provider dispatch, Twilio sending and signature validation, queued delivery.
 - `server.py`: local SQLite webhook endpoint and background worker.
 - `cloud.py`, `api/`: Vercel signed webhook and authenticated scheduled worker.
 - `postgres.py`, `supabase/`: Postgres persistence, private schema, and cron setup.
@@ -135,10 +134,11 @@ automatically restore an RSVP.
 
 Inbound message IDs are unique, preventing duplicate processing on webhook retries. Webhook
 handlers acknowledge after durable enqueueing; model calls happen on the worker. Model calls
-do not hold a database write lock. A single worker owns state updates. Plivo's documented V2 signature validates the configured callback URL and nonce using the
-Auth Token; it does not sign the POST body or enforce timestamp freshness. Keep HTTPS and
-request-log redaction enabled. Message IDs deduplicate retries. Legacy Telnyx signatures
-validate the raw body with a five-minute timestamp window.
+do not hold a database write lock. A single worker owns state updates. Twilio signatures are verified using the official SDK against the exact configured HTTPS
+URL and all submitted form fields. Host/proxy headers cannot override the signed URL.
+Signed Account SID and destination are checked. Duplicate Message SIDs are ignored.
+Successful callbacks return empty TwiML; actual replies are sent by the durable worker.
+
 
 The outbox suppresses obsolete schedule versions and opted-out/declined recipients before
 sending. Messages accepted by the provider are tracked separately from delivery callbacks. Ambiguous
@@ -163,10 +163,20 @@ errors retry up to three times, then need operator review. This prototype has no
 
 ## Integration references
 
-- [Plivo callbacks](https://www.plivo.com/docs/messaging/concepts/callbacks)
-- [Plivo signature validation](https://www.plivo.com/docs/messaging/concepts/signature-validation)
+- [Twilio callbacks](https://www.twilio.com/docs/messaging/guides/webhook-request)
+- [Twilio signature validation](https://www.twilio.com/docs/usage/security)
 - [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 
 Legacy Telnyx support is retained only when explicitly setting `SMS_PROVIDER=telnyx` with
 `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY`, and `TELNYX_PHONE_NUMBER`. The default never sends
 through Telnyx. Previously purchased Telnyx resources are not cancelled by this code change.
+
+Plivo support remains available only with `SMS_PROVIDER=plivo` and its `PLIVO_AUTH_ID`,
+`PLIVO_AUTH_TOKEN`, `PLIVO_PHONE_NUMBER`, and `PLIVO_WEBHOOK_URL` settings. Existing Plivo
+or Telnyx accounts and numbers are not changed by selecting Twilio.
+
+Twilio setup requires `TWILIO_ACCOUNT_SID`, the corresponding account `TWILIO_AUTH_TOKEN`
+(for signature validation and initial API access), `TWILIO_PHONE_NUMBER`, and
+`TWILIO_WEBHOOK_URL`. Do not put credentials in chat, Git, or callback URLs. A trial can
+help validate the integration but is not a substitute for sender registration and approval.
+For toll-free SMS, follow Twilio's current verification flow before sending to the group.
