@@ -41,6 +41,10 @@ def deliver(store, sender=send):
         with store.db:
             store.db.execute("UPDATE outbox SET status='suppressed' WHERE id=?", (row['id'],))
         return True
+    # One worker owns delivery. Count uncertain/failed attempts too, conservatively.
+    used = store.db.execute("SELECT count(*) FROM outbox WHERE status NOT IN ('pending','suppressed')").fetchone()[0]
+    if used >= send_limit():
+        return False
     # Persist before network I/O. Ambiguous sends are never blindly retried: that
     # could send duplicate invitations/reminders. Operator reconciles with the SMS provider.
     with store.db:
@@ -108,3 +112,11 @@ def required_settings():
         'plivo': ['PLIVO_AUTH_ID', 'PLIVO_AUTH_TOKEN', 'PLIVO_PHONE_NUMBER', 'PLIVO_WEBHOOK_URL'],
         'telnyx': ['TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_PHONE_NUMBER'],
     }[provider()]
+
+
+def send_limit():
+    # Lifetime per database, not a rolling allowance or a provider-credit counter.
+    limit = int(os.getenv('SMS_SEND_LIMIT', '100'))
+    if limit < 0:
+        raise ValueError('SMS_SEND_LIMIT must be nonnegative')
+    return limit

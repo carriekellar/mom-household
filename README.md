@@ -180,3 +180,16 @@ Twilio setup requires `TWILIO_ACCOUNT_SID`, the corresponding account `TWILIO_AU
 `TWILIO_WEBHOOK_URL`. Do not put credentials in chat, Git, or callback URLs. A trial can
 help validate the integration but is not a substitute for sender registration and approval.
 For toll-free SMS, follow Twilio's current verification flow before sending to the group.
+
+## Starter send cap
+
+`SMS_SEND_LIMIT` defaults to 100 outbound API attempts over the lifetime of this database.
+Pending and suppressed messages do not count; uncertain and failed sends do. At the cap,
+the worker leaves remaining messages pending and does not call the sending API. Set 0 to
+pause sends. The count persists across restarts; do not delete outbox rows to reset it.
+This uses the existing single-worker guarantee (Postgres advisory lock or one SQLite worker).
+
+This is not a Twilio credit counter: multipart messages, incoming texts, provider-generated
+responses, and sends made elsewhere can affect the provider allowance separately. Check the
+Twilio dashboard before a live pilot. Increasing the cap later releases pending messages;
+review the queue first, including any old reminders.

@@ -98,3 +98,32 @@ class TwilioTests(unittest.TestCase):
             receipt=incoming(MessageStatus='delivered',From=ENV['TWILIO_PHONE_NUMBER'])
             with urlopen(Request(url,data=urlencode(receipt).encode(),headers=headers(receipt))): pass
             store.return_value.finalized.assert_called_once_with(SID,'delivered')
+
+
+class SendLimitTests(unittest.TestCase):
+    def test_cap_survives_reopen_and_counts_uncertain_attempts(self):
+        from transport import deliver
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'SMS_SEND_LIMIT':'1'}):
+            store = Store(folder+'/db')
+            with store.db:
+                store.db.execute("INSERT INTO outbox(phone,body) VALUES('alex','one'),('alex','two')")
+            def fail(*args):
+                raise TimeoutError()
+            self.assertTrue(deliver(store, fail))
+            store.db.close()
+            store = Store(folder+'/db')
+            with patch('transport.send') as unused:
+                self.assertFalse(deliver(store, unused))
+                unused.assert_not_called()
+            self.assertEqual(store.db.execute("SELECT count(*) FROM outbox WHERE status='pending'").fetchone()[0],1)
+            store.db.close()
+
+    def test_zero_limit_pauses_sending(self):
+        from transport import deliver
+        store = Store(':memory:')
+        self.addCleanup(store.db.close)
+        with store.db:
+            store.db.execute("INSERT INTO outbox(phone,body) VALUES('alex','one')")
+        with patch.dict(os.environ, {'SMS_SEND_LIMIT':'0'}), patch('transport.send') as sender:
+            self.assertFalse(deliver(store,sender))
+            sender.assert_not_called()

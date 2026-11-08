@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
 from household import Scheduler, stamp
-from transport import send
+from transport import send, send_limit
 
 
 class PostgresStore:
@@ -91,6 +91,9 @@ class PostgresStore:
         if stale or row['phone'] in state['blocked']:
             self.db.execute("UPDATE outbox SET status='suppressed' WHERE id=%s", (row['id'],))
             return True
+        used = self.db.execute("SELECT count(*) AS n FROM outbox WHERE status NOT IN ('pending','suppressed')").fetchone()['n']
+        if used >= send_limit():
+            return False
         self.db.execute("UPDATE outbox SET status='sending' WHERE id=%s", (row['id'],))
         try:
             sid = sender(row['phone'], row['body'])
