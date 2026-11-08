@@ -242,3 +242,28 @@ Deployment verification (November 8, 2026): public health returns 200; unsigned 
 200. Explicit `handler` classes in `api/` are necessary for Vercel to discover all functions;
 import aliases alone were skipped by the deployed build. Supabase project: `czfqmelgorakcqvdfrgd`.
 The cron job remains named `mom-household-process` internally for continuity.
+
+## Readable invitations, remembered plans, and calendar files
+
+New plans receive a title-based invitation name, for example
+`park-playdate-maple-river-48271`. The random suffix avoids collisions and keeps invitations
+harder to guess. Existing short codes still work. A participant supplies the invitation
+name once; the service remembers that plan for later messages. `PLANS` lists active plans;
+text an invitation name, `SWITCH <invitation name>`, or an unambiguous title to change plans.
+`NEW ...` starts a separate plan. Canceled/ended selections never silently redirect a reply
+to another plan. A notification from another plan clears an ambiguous selection and asks
+for a choice rather than assuming which event a YES refers to.
+
+After creation, the organizer is offered `CALENDAR` or `NOT NOW`. This is optional and does
+not block scheduling. CALENDAR sends all attending participants a private `.ics` download
+link only after everyone confirms. Each person imports/saves the event themselves. No
+calendar OAuth, calendar access, email invitation, or automatic updates are involved.
+Changing/canceling a plan makes its old download unavailable until reconfirmed; already
+saved events must be updated manually. A later CALENDAR request can enable the feature.
+
+The Vercel `/api/calendar?token=...` handler uses a separate 256-bit bearer token, returns
+only the confirmed title/time/location, and disables caching. Anyone with the link can
+view those details; share it only with intended participants. Ordinary invitation names
+and old short codes do not grant calendar-download access. Offline demo links are simulated
+and are not registered in the hosted database. SQLite-only deployments do not serve the
+hosted download endpoint; the export feature is intended for Vercel + Supabase.

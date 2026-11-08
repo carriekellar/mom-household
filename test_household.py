@@ -72,13 +72,13 @@ class SchedulingTests(unittest.TestCase):
 
     def test_waits_for_everyone(self):
         code = self.plan()
-        self.text('sarah', code, {'intent': 'availability', 'windows': [WINDOW]})
+        self.text('sarah', code + ' Saturday', {'intent': 'availability', 'windows': [WINDOW]})
         self.assertEqual(self.event(code)['status'], 'collecting')
 
     def test_no_overlap_does_not_propose(self):
         code = self.plan()
-        self.text('sarah', code, {'intent': 'availability', 'windows': [WINDOW]})
-        self.text('jess', code, {'intent': 'availability', 'windows': [['2026-10-25T10:00:00-04:00', '2026-10-25T12:00:00-04:00']]})
+        self.text('sarah', code + ' Saturday', {'intent': 'availability', 'windows': [WINDOW]})
+        self.text('jess', code + ' Sunday', {'intent': 'availability', 'windows': [['2026-10-25T10:00:00-04:00', '2026-10-25T12:00:00-04:00']]})
         self.assertIsNone(self.event(code)['slot'])
 
     def test_cancellation_keeps_group_plan_and_stops_reminders(self):
@@ -123,16 +123,20 @@ class SchedulingTests(unittest.TestCase):
         self.text('alex', 'CANCEL PLAN')
         self.assertEqual(self.event(code)['status'], 'cancelled')
 
-    def test_ambiguous_plan_requires_code(self):
+    def test_multiple_plans_without_selection_require_choice(self):
         first = self.plan()
         self.text('alex', 'NEW dinner', create())
+        state = self.store.load()
+        state['threads'].pop('alex', None)
+        with self.store.db:
+            self.store.db.execute('UPDATE state SET body=?', (json.dumps(state),))
         self.text('alex', 'YES')
         self.assertEqual(self.event(first)['members']['alex']['rsvp'], 'pending')
         self.assertIn('Which plan?', self.store.db.execute('SELECT body FROM outbox ORDER BY id DESC LIMIT 1').fetchone()[0])
 
     def test_invalid_output_rolls_back_membership(self):
         code = self.plan()
-        self.text('sarah', code, {'intent': 'availability', 'windows': [['yesterday', 'tomorrow']]})
+        self.text('sarah', code + ' yesterday', {'intent': 'availability', 'windows': [['yesterday', 'tomorrow']]})
         self.assertNotIn('sarah', self.event(code)['members'])
 
     def test_changed_availability_requires_new_confirmations(self):

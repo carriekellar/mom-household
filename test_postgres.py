@@ -40,11 +40,14 @@ class PostgresTests(unittest.TestCase):
     def test_full_flow_cancellation_and_reminder_deduplication(self):
         self.text('alex', 'Playdate', create())
         code = next(iter(self.store.load()['events']))
+        self.text('alex', 'CALENDAR')
         for person in ('sarah', 'jess'):
-            self.text(person, code, {'intent': 'availability', 'windows': [WINDOW]})
+            self.text(person, code + ' Saturday', {'intent': 'availability', 'windows': [WINDOW]})
         for person in ('alex', 'sarah', 'jess'):
             self.text(person, 'YES')
         self.assertEqual(self.store.load()['events'][code]['status'], 'confirmed')
+        self.assertEqual(len(self.store.load()['events'][code]['calendar_token']), 43)
+        self.assertEqual(self.store.load()['threads']['alex'], code)
         self.text('sarah', "Can't come", {'intent': 'decline'})
         due = datetime(2026, 10, 23, 14, tzinfo=UTC)
         self.store.remind(due)

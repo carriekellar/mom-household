@@ -4,7 +4,7 @@ import os
 from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
-from household import Scheduler, stamp, permitted_message
+from household import Scheduler, stamp, permitted_message, label
 from transport import send, send_limit
 
 
@@ -78,7 +78,7 @@ class PostgresStore:
             for hours in (24, 1):
                 key = f"{event['version']}:{hours}"
                 if hours * 3600 - 900 <= remaining <= hours * 3600 and key not in event['reminders']:
-                    app.broadcast(event, f"Reminder: {app.details(event)}. Can't make it? Text {event['code']} can't come.")
+                    app.broadcast(event, f"Reminder: {app.details(event)}. Can't make it? Reply that you can't come. To switch to this plan, text {label(event)}.")
                     event['reminders'].append(key)
         with self.db.transaction():
             self.save(state, app.messages)
