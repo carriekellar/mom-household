@@ -10,18 +10,17 @@ from zoneinfo import ZoneInfo
 UTC = timezone.utc
 CONSENT_VERSION = '2026-11-08'
 SITE_URL = 'https://work-wife-registration.vercel.app'
-PLAN_WORDS = ('amber apple birch bloom brook cedar cherry cloud coral daisy dawn fern '
-              'field finch forest garden hazel hill ivy lake leaf lemon lilac maple '
-              'meadow mint moss oak olive peach pine river').split()
-
-
 def plan_handle(title, events):
-    stem = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:32].rstrip('-') or 'plan'
-    used = {e.get('handle', '').lower() for e in events.values()}
+    # Reserve both public invitations and legacy internal IDs to avoid ambiguity.
+    used = {str(value).lower() for key, event in events.items()
+            for value in (key, event.get('code', ''), event.get('handle', ''))}
+    if sum(len(value) == 6 and value.isascii() and value.isdigit()
+           and value[0] != '0' for value in used) >= 900000:
+        raise ValueError('No invitation codes available')
     while True:
-        handle = f'{stem}-{secrets.choice(PLAN_WORDS)}-{secrets.choice(PLAN_WORDS)}-{secrets.randbelow(100000):05d}'
-        if handle not in used:
-            return handle
+        code = str(100000 + secrets.randbelow(900000))
+        if code not in used:
+            return code
 
 
 def label(event):
@@ -268,7 +267,7 @@ class Scheduler:
             code = titles[0]['code']
             tokens = []
         elif not code and (upper.startswith('SWITCH ') or len(titles) > 1):
-            self.say(phone, 'Select a plan by its full invitation name: ' + ', '.join(label(e) for e in active))
+            self.say(phone, 'Select a plan by its invitation code: ' + ', '.join(label(e) for e in active))
             return
         selected = self.state['threads'].get(phone)
         if selected and not any(e['code'] == selected for e in active):
@@ -347,10 +346,8 @@ class Scheduler:
             if not isinstance(count, int) or not 2 <= count <= 12 or not isinstance(minutes, int) or not 15 <= minutes <= 240:
                 raise ValueError('Invalid group size or duration')
             ZoneInfo(parsed['timezone'])
-            code = secrets.token_hex(3).upper()
-            while code in events:
-                code = secrets.token_hex(3).upper()
-            e = {'code': code, 'handle': plan_handle(parsed['title'], events), 'owner': phone, 'title': parsed['title'][:80], 'expected': count,
+            code = plan_handle(parsed['title'], events)
+            e = {'code': code, 'handle': code, 'owner': phone, 'title': parsed['title'][:80], 'expected': count,
                  'minutes': minutes, 'timezone': parsed['timezone'], 'location': parsed['location'] or 'Location to follow',
                  'planning_window': parsed.get('planning_window', ''), 'status': 'collecting', 'slot': None, 'version': 1, 'reminders': [],
                  'calendar_choice': None, 'calendar_question_pending': True, 'members': {phone: {'name': parsed.get('name') or 'Organizer', 'windows': [], 'rsvp': 'pending'}}}
@@ -359,7 +356,7 @@ class Scheduler:
             self.state['drafts'].pop(phone, None)
             from transport import phone_number
             number = phone_number() or '[scheduling number]'
-            self.say(phone, f"{e['title']} for {count} adults replying, {minutes} min. Times: {e['timezone']}. Forward: Enroll at {SITE_URL}, then text {label(e)} and when you're free to {number}. You only need the invitation name once; after that, just reply. Text PLANS to switch. Reply STOP to opt out.")
+            self.say(phone, f"{e['title']} for {count} adults replying, {minutes} min. Times: {e['timezone']}. Forward: Enroll at {SITE_URL}, then text {label(e)} and when you're free to {number}. You only need the invitation code once; after that, just reply. Text PLANS to switch. Reply STOP to opt out.")
             self.say(phone, 'Would you like an add-to-calendar link for everyone once the time is confirmed? Reply CALENDAR or NOT NOW. No calendar connection needed; each person saves it themselves.')
             if not parsed.get('windows'):
                 self.say(phone, f"[{e['title']}] When are you free? Tell me dates and a time range in your own words.")

@@ -306,3 +306,5 @@ References: [Sendblue webhooks](https://docs.sendblue.com/getting-started/webhoo
 [webhook authentication](https://docs.sendblue.com/security/),
 [iMessage lookup](https://docs.sendblue.com/guides/check-imessage-support/),
 [inline replies](https://docs.sendblue.com/guides/inline-replies/).
+
+New plan invitations use six numeric digits (for example, `482719`). Codes remain unique across stored plans and legacy IDs. Existing long invitations remain valid; participants still only enter a code once and use PLANS to switch.

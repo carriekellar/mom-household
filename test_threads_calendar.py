@@ -26,7 +26,8 @@ class ThreadCalendarTests(unittest.TestCase):
         self.text('alex', 'NEW dinner', other)
         second = self.store.load()['threads']['alex']
         self.assertNotEqual(first, second)
-        self.assertTrue(self.event(first)['handle'].startswith('park-playdate-'))
+        self.assertRegex(self.event(first)['handle'], r'^[1-9][0-9]{5}$')
+        self.assertEqual(first, self.event(first)['handle'])
         self.text('alex', 'Park playdate')
         self.assertEqual(self.store.load()['threads']['alex'], first)
         self.text('alex', '10 to noon', {'intent':'availability','windows':[WINDOW]})
@@ -34,6 +35,21 @@ class ThreadCalendarTests(unittest.TestCase):
         self.text('sarah', self.event(first)['handle'].upper())
         self.text('sarah', '10 to noon', {'intent':'availability','windows':[WINDOW]})
         self.assertEqual(self.event(first)['members']['sarah']['windows'][0][0], '2026-10-24T14:00:00+00:00')
+
+    def test_numeric_invitation_avoids_legacy_ids_and_handles(self):
+        events = {'123456': {'code': '123456', 'handle': 'old-playdate'},
+                  'ABCDEF': {'code': 'ABCDEF', 'handle': '234567'}}
+        with patch('household.secrets.randbelow', side_effect=[23456, 134567, 245678]):
+            self.assertEqual(plan_handle('Coffee', events), '345678')
+
+    def test_legacy_invitation_still_joins(self):
+        code = self.plan()
+        state = self.store.load()
+        state['events'][code]['handle'] = 'park-playdate-maple-river-48271'
+        self.store.db.execute('UPDATE state SET body=? WHERE id=1', (json.dumps(state),))
+        self.store.db.commit()
+        self.text('sarah', 'park-playdate-maple-river-48271')
+        self.assertEqual(self.store.load()['threads']['sarah'], code)
 
     def test_calendar_is_optional_and_only_sent_after_everyone_confirms(self):
         code = self.plan()
@@ -92,7 +108,7 @@ class ThreadCalendarTests(unittest.TestCase):
     def test_duplicate_title_requires_full_invitation_name(self):
         self.plan();self.text('alex','NEW another park plan',create())
         self.text('alex','Park playdate')
-        self.assertIn('full invitation name',self.store.db.execute('SELECT body FROM outbox ORDER BY id DESC LIMIT 1').fetchone()[0])
+        self.assertIn('invitation code',self.store.db.execute('SELECT body FROM outbox ORDER BY id DESC LIMIT 1').fetchone()[0])
 
 
 class CalendarDownloadTests(unittest.TestCase):
