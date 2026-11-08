@@ -137,7 +137,7 @@ class Store:
                 for kind, due in reminder_schedule(e):
                     key = f"{e['version']}:{kind}"
                     if 0 <= (now - due).total_seconds() <= 900 and key not in e['reminders']:
-                        app.broadcast(e, f"Reminder: {app.details(e)}. Can't make it? Reply that you can't come. To switch to this plan, text {label(e)}.")
+                        app.broadcast(e, f"Reminder: {app.details(e)}. \n\nCan't make it? Just reply.\nSwitch to this plan: {label(e)}.")
                         e['reminders'].append(key)
             self.db.execute('UPDATE state SET body=? WHERE id=1', (json.dumps(state),))
             self.save_messages(app.messages)
@@ -159,22 +159,22 @@ class Scheduler:
                 self.state['threads'].pop(phone, None)
                 body += f' To reply about this plan, first text {label(event)}.'
             if not bare and not body.startswith('Work Wife'):
-                body = 'Work Wife: ' + body
+                body = 'Work Wife ✨\n\n' + body
             self.messages.append((phone, body, event['code'] if event else None,
                                   event['version'] if event else None))
 
     def broadcast(self, e, body):
         for phone, member in e['members'].items():
             if member['rsvp'] != 'declined':
-                self.say(phone, f"[{e['title']}] {body}", e)
+                self.say(phone, f"{e['title']}\n\n{body}", e)
 
     def details(self, e):
         if date_plan(e):
             start = stamp(e['slot']).astimezone(ZoneInfo(e['timezone'])).date()
             end = event_end(e).date() - timedelta(days=1)
-            return f"{e['title']}, {start:%b %d, %Y}–{end:%b %d, %Y}, {duration_text(e)}, {e['location']}; times not set"
+            return f"{start:%b %d, %Y}–{end:%b %d, %Y}\n{duration_text(e)} · {e['location']}\nTimes still to come"
         when = stamp(e['slot']).astimezone(ZoneInfo(e['timezone'])).strftime('%a %b %d, %I:%M %p %Z')
-        return f"{e['title']}, {when}, {e['minutes']} min, {e['location']}"
+        return f"{when}\n{e['minutes']} min · {e['location']}"
 
     def reset(self, e):
         e['version'] += 1
@@ -191,16 +191,16 @@ class Scheduler:
         slot = match_dates(e, self.now) if date_plan(e) else overlap([m['windows'] for m in members], e['minutes'], self.now)
         if not slot:
             if all(m.get('date_windows' if date_plan(e) else 'windows') for m in members):
-                self.broadcast(e, 'No shared time yet. Please text any additional availability, including your earlier options.')
+                self.broadcast(e, "We haven't found an overlap yet.\n\nAny other dates or times that could work? Send your full availability, including your earlier options.")
             return
         e['slot'], e['status'] = slot, 'proposed'
-        self.broadcast(e, f"A time works for everyone: {self.details(e)}. Reply YES to confirm or NO if it no longer works. To select this plan, text {label(e)}.")
+        self.broadcast(e, f"Found a match!\n\n{self.details(e)}\n\nReply YES to confirm or NO if it no longer works.\nSwitch to this plan: {label(e)}")
 
     def calendar_links(self, event):
         event.setdefault('calendar_token', secrets.token_urlsafe(32))
         event['calendar_generated_at'] = self.now.isoformat()
-        self.broadcast(event, 'Add this confirmed plan to your calendar: '
-                       f"https://work-wife-app.vercel.app/api/calendar?token={event['calendar_token']} "
+        self.broadcast(event, 'Your plan is ready for the calendar!\n\n'
+                       f"https://work-wife-app.vercel.app/api/calendar?token={event['calendar_token']}\n\n"
                        'Open the calendar file and save it. Changes and cancellations still arrive by text; saved events do not sync automatically.')
 
     def record_consent(self, phone, status):
@@ -323,11 +323,11 @@ class Scheduler:
                 self.say(phone, 'This plan is already full or scheduled. Please check with the organizer.')
                 return
             e['members'][phone] = {'name': 'A participant', 'windows': [], 'rsvp': 'pending'}
-            self.say(phone, f"Joined {e['title']}. Just reply here; no need to repeat the invitation name. Text PLANS to switch. Times use {e['timezone']}. Reply STOP to opt out. Your availability is used only to find a shared time.")
+            self.say(phone, f"Joined {e['title']}!\n\nJust reply here; no need to repeat the code. Text PLANS to switch. Times use {e['timezone']}. Reply STOP to opt out. Your availability is used only to find a shared time.")
         if e:
             self.state['threads'][phone] = e['code']
             if not text:
-                self.say(phone, f"You're chatting about {e['title']}. Just reply here; no need to repeat the invitation name. Text PLANS to switch. "
+                self.say(phone, f"You're chatting about {e['title']}. Just reply here; no need to repeat the code. Text PLANS to switch. "
                          + ('Reply YES or NO for the proposed time.' if e['status'] in ('proposed', 'confirmed') else 'When are you free?'))
                 return
         calendar_reply = text.strip().upper().rstrip('.!')
@@ -401,10 +401,10 @@ class Scheduler:
             from transport import phone_number
             number = phone_number() or '[scheduling number]'
             self.say(phone, label(e), bare=True)
-            self.say(phone, f"Copy this invitation into your group chat:\n{e['title']} — {duration_text(e)}. "
-                     f"{e['planning_window']}\nText {label(e)} to {number}, then tell Work Wife when you're free. "
+            self.say(phone, f"Copy this invitation into your group chat:\n\n{e['title']}\n{duration_text(e)} · "
+                     f"{e['planning_window']}\n\nText {label(e)} to {number}, then tell Work Wife when you're free.\n\n"
                      "New participants will be asked to enroll first. Work Wife coordinates privately with each person.")
-            self.say(phone, 'Would you like an add-to-calendar link for everyone once the time is confirmed? Reply CALENDAR or NOT NOW. No calendar connection needed; each person saves it themselves.')
+            self.say(phone, 'Want this on your calendars once everyone confirms?\n\nReply CALENDAR or NOT NOW.\n\nNo calendar connection needed—each person saves their own link.')
             if not parsed.get('date_windows' if date_plan(e) else 'windows'):
                 self.say(phone, f"[{e['title']}] When are you free? " + ('Tell me which dates work; no clock times needed.' if date_plan(e) else 'Tell me dates and a time range in your own words.'))
                 return
@@ -423,10 +423,10 @@ class Scheduler:
                 self.say(phone, 'You previously declined. Send your availability again to rejoin before confirming.')
                 return
             member['rsvp'] = 'yes'
-            self.say(phone, f"[{e['title']}] Your YES is saved.")
+            self.say(phone, f"{e['title']}\n\nYour YES is saved. You're in!")
             if e['status'] != 'confirmed' and all(m['rsvp'] == 'yes' for m in e['members'].values()):
                 e['status'] = 'confirmed'
-                self.broadcast(e, f"It's on! {self.details(e)}. We'll send reminders before the plan. Text if you can't come.")
+                self.broadcast(e, f"It's on!\n\n{self.details(e)}\n\nWe'll send reminders before the plan. Just text if you can't come.")
                 if e.get('calendar_choice'):
                     self.calendar_links(e)
         elif intent == 'decline':
@@ -481,7 +481,7 @@ class Scheduler:
             tz = ZoneInfo(e['timezone'])
             summary = ', '.join(a for a, b in normalized) if date_plan(e) else '; '.join(f"{stamp(a).astimezone(tz):%a %b %d %I:%M %p}–{stamp(b).astimezone(tz):%I:%M %p %Z}" for a, b in normalized)
             summary = summary or 'no available dates remaining; send other dates when you can'
-            self.say(phone, f"[{e['title']}] I read your availability as: {summary}{' (tentative)' if member.get('tentative') else ''}. Text a correction anytime.")
+            self.say(phone, f"{e['title']}\n\nGot it! I read your availability as:\n{summary}{' (tentative)' if member.get('tentative') else ''}.\n\nText a correction anytime.")
             self.match(e)
         else:
             self.say(phone, f"[{e['title']}] Tell me when you're free, YES to confirm, NO if you can't come, or RESCHEDULE to find a new time.")

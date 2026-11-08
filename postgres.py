@@ -78,7 +78,7 @@ class PostgresStore:
             for kind, due in reminder_schedule(event):
                 key = f"{event['version']}:{kind}"
                 if 0 <= (now - due).total_seconds() <= 900 and key not in event['reminders']:
-                    app.broadcast(event, f"Reminder: {app.details(event)}. Can't make it? Reply that you can't come. To switch to this plan, text {label(event)}.")
+                    app.broadcast(event, f"Reminder: {app.details(event)}. \n\nCan't make it? Just reply.\nSwitch to this plan: {label(event)}.")
                     event['reminders'].append(key)
         with self.db.transaction():
             self.save(state, app.messages)
