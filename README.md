@@ -1,4 +1,4 @@
-# Mom Household
+# Work Wife
 
 A tiny group scheduling assistant you text. No accounts, slot-picking forms, or app downloads.
 
@@ -10,7 +10,7 @@ to confirm, sends reminders, and handles cancellations.
 
 Backend prototype with Twilio texting, availability matching, confirmations, reminders, and
 cancellations. Vercel handlers and Supabase Postgres persistence are implemented; the local
-SQLite demo remains available. Twilio is the default provider; its account and number setup remain pending. **Not yet deployed or verified
+SQLite demo remains available. Twilio is the default provider; the Work Wife number and messaging service are provisioned. **Not yet deployed or verified
 with live group texting.** Live provider credentials, registration, hosting, and an OpenAI extraction check remain required.
 
 ## Try the offline demo
@@ -44,7 +44,7 @@ pretend to test the language model or send real texts.
    it during acceptance testing; the app also suppresses opted-out recipients.
 5. Local SQLite requires one continuously running instance and persistent storage.
    Vercel uses Supabase and scheduled processing instead. `/health` checks HTTP liveness only.
-6. Text your number: “Plan an hour-long park playdate next week for three parents including
+6. First text JOIN, read the disclosures, and reply Y within 24 hours to enroll. Then text your number: “Plan an hour-long park playdate next week for three parents including
    me. I'm Alex, free Saturday 10 am to noon.” Answer any short clarifying questions. Forward
    the invitation and **the actual texting number** to your friends.
 
@@ -119,7 +119,7 @@ person's previous availability, so include all options. A changed schedule reset
 `STATUS` lists active plans. Include a code when participating in multiple plans. `NEW ...`
 starts another plan. `NO` cancels only your attendance. The organizer can request `RESCHEDULE`;
 this clears the old time and asks everyone again. Cancelling the entire event requires the
-organizer to text `CODE CANCEL PLAN`. `STOP` opts out; `START` re-enables messages but does not
+organizer to text `CODE CANCEL PLAN`. `STOP` opts out; `START` begins a fresh JOIN-style confirmation (reply Y) and does not
 automatically restore an RSVP.
 
 ## Implementation
@@ -214,3 +214,23 @@ are changed by these static pages.
 Draft pages are published at https://work-wife-registration.vercel.app in the
 `thecarringtonevent/work-wife-registration` Vercel project. This standalone static
 deployment contains only `public/` and does not deploy the scheduler or credentials.
+
+## SMS consent implementation
+
+Every phone starts unenrolled, including existing database members. JOIN sends disclosures;
+Y confirms a pending request within 24 hours. YES is reserved for an event RSVP. No parser,
+plan creation, joining, or scheduling delivery runs for unenrolled users. Consent transitions
+are stored with timestamps and disclosure version in the durable state. STOP withdraws
+consent and suppresses queued messages atomically; START/UNSTOP require a new Y and do not
+restore attendance. HELP works without enrollment. The 100-attempt cap includes enrollment.
+
+`TWILIO_MESSAGING_SERVICE_SID` attaches outbound sends to the configured service while
+pinning the one sender number. Configure Advanced Opt-Out START keywords as START/UNSTOP,
+not JOIN, Y, or YES: the application owns initial enrollment and RSVP handling. Twilio sends
+STOP acknowledgments. If Twilio marks a HELP webhook as already handled, the app does not
+send a duplicate; configure its HELP response with the Work Wife support email. Verify the
+provider's actual keyword settings before a live pilot.
+
+The public policies remain drafts pending retention decisions and live acceptance testing.
+The consent code is implemented and covered by SQLite and Postgres tests; this is not a
+claim that carrier registration or end-to-end delivery is complete.

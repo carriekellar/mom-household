@@ -4,7 +4,7 @@ import os
 from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
-from household import Scheduler, stamp
+from household import Scheduler, stamp, permitted_message
 from transport import send, send_limit
 
 
@@ -62,6 +62,8 @@ class PostgresStore:
             self.db.execute("UPDATE inbox SET attempts=attempts+1, status=CASE WHEN attempts>=2 THEN 'needs_review' ELSE 'pending' END WHERE sid=%s", (row['sid'],))
             raise
         with self.db.transaction():
+            if row['phone'] in state['blocked']:
+                self.db.execute("UPDATE outbox SET status='suppressed' WHERE phone=%s AND status='pending'", (row['phone'],))
             self.save(state, app.messages)
             self.db.execute("UPDATE inbox SET status='done' WHERE sid=%s", (row['sid'],))
         return True
@@ -88,7 +90,7 @@ class PostgresStore:
         state = self.load()
         event = state['events'].get(row['event'])
         stale = event and (event['version'] != row['version'] or event['members'].get(row['phone'], {}).get('rsvp') == 'declined')
-        if stale or row['phone'] in state['blocked']:
+        if stale or not permitted_message(state, row['phone'], row['body']):
             self.db.execute("UPDATE outbox SET status='suppressed' WHERE id=%s", (row['id'],))
             return True
         used = self.db.execute("SELECT count(*) AS n FROM outbox WHERE status NOT IN ('pending','suppressed')").fetchone()['n']

@@ -37,7 +37,8 @@ def deliver(store, sender=send):
     state = store.load()
     e = state['events'].get(row['event'])
     stale = e and (e['version'] != row['version'] or e['members'].get(row['phone'], {}).get('rsvp') == 'declined')
-    if row['phone'] in state['blocked'] or stale:
+    from household import permitted_message
+    if not permitted_message(state, row['phone'], row['body']) or stale:
         with store.db:
             store.db.execute("UPDATE outbox SET status='suppressed' WHERE id=?", (row['id'],))
         return True

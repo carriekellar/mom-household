@@ -22,6 +22,10 @@ class PostgresTests(unittest.TestCase):
         self.lock = self.store.worker()
         self.assertTrue(self.lock.__enter__())
         self.counter = 0
+        for person in ('alex', 'sarah', 'jess'):
+            self.text(person, 'JOIN')
+            self.text(person, 'Y')
+        self.store.db.execute('TRUNCATE inbox,outbox RESTART IDENTITY')
 
     def tearDown(self):
         self.lock.__exit__(None, None, None)
@@ -92,3 +96,21 @@ class PostgresTests(unittest.TestCase):
         self.assertFalse(self.store.process(fail, NOW))
         self.assertEqual(self.store.load()['events'], {})
         self.assertEqual(self.store.db.execute('SELECT status FROM inbox').fetchone()['status'], 'needs_review')
+
+    def test_unenrolled_join_confirm_stop_restart_and_delivery(self):
+        from household import WELCOME, ENROLLED
+        def no_ai(*args):
+            raise AssertionError('Enrollment must not call AI')
+        for i, body in enumerate(('Plan a dinner', 'JOIN', 'Y', 'STOP', 'START')):
+            self.store.enqueue('consent-'+str(i), 'new', body)
+            self.store.process(no_ai, NOW)
+        self.assertEqual(self.store.load()['consents']['new']['status'], 'pending')
+        sent = []
+        while self.store.deliver(lambda p,b: sent.append(b) or str(len(sent))):
+            pass
+        self.assertEqual(sent, [WELCOME])
+        self.store.enqueue('final-y', 'new', 'Y')
+        self.store.process(no_ai, NOW)
+        self.assertEqual(self.store.load()['consents']['new']['status'], 'enrolled')
+        self.store.deliver(lambda p,b: sent.append(b) or 'confirmed')
+        self.assertEqual(sent[-1], ENROLLED)

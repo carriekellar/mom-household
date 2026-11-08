@@ -14,9 +14,13 @@ def text(person, message, intent=None):
     print(f'\n{person} → {message}')
     store.enqueue(str(sequence), person, message)
     store.process(lambda *_: intent, NOW)
-    while deliver(store, lambda p, t: print(f'  Mom Household → {p}: {t}') or 'demo'):
+    while deliver(store, lambda p, t: print(f'  Work Wife → {p}: {t}') or 'demo'):
         pass
 
+
+for person in ('Alex', 'Sarah', 'Jess'):
+    text(person, 'JOIN')
+    text(person, 'Y')
 
 text('Alex', 'Playdate at Prospect Park for 3 parents including me. An hour Saturday, October 24. I am free 10 to noon.', create())
 code = next(iter(store.load()['events']))
@@ -26,7 +30,7 @@ for person in ('Alex', 'Sarah', 'Jess'):
     text(person, 'YES')
 print('\n— Day-before reminder —')
 store.remind(datetime(2026, 10, 23, 15, tzinfo=UTC))
-while deliver(store, lambda p, t: print(f'  Mom Household → {p}: {t}') or 'demo'):
+while deliver(store, lambda p, t: print(f'  Work Wife → {p}: {t}') or 'demo'):
     pass
 text('Sarah', "Sorry, can't make the playdate", {'intent': 'decline'})
 store.db.close()

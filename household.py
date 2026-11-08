@@ -7,6 +7,29 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 UTC = timezone.utc
+CONSENT_VERSION = '2026-11-08'
+SITE_URL = 'https://work-wife-registration.vercel.app'
+WELCOME = ("Work Wife: Get automated scheduling texts for plans you join: availability, confirmations, "
+           "reminders, changes and cancellations. Message frequency varies. Msg & data rates may apply. "
+           "Reply HELP for help or STOP to opt out. Support: carrie@candur.ai. "
+           f"Terms: {SITE_URL}/terms.html Privacy: {SITE_URL}/privacy.html "
+           "Reply Y to confirm enrollment and accept the Terms.")
+ENROLLED = ("Work Wife: You're enrolled in scheduling texts. Message frequency varies. "
+            "Msg & data rates may apply. HELP for help; STOP to opt out. Support: carrie@candur.ai. "
+            "Tell us what you'd like to plan, or send your plan code and availability.")
+HELP = ("Work Wife scheduling support: carrie@candur.ai. Describe a plan or send your plan code "
+        "and availability. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out.")
+INVITE = f"Work Wife: To enroll, read {SITE_URL} and text JOIN. HELP for help; STOP to opt out."
+
+
+def enrolled(state, phone):
+    return state.get('consents', {}).get(phone, {}).get('status') == 'enrolled'
+
+
+def permitted_message(state, phone, body):
+    # Also gate legacy queued messages when upgrading an existing database.
+    return phone not in state['blocked'] and (enrolled(state, phone) or body in (WELCOME, HELP, INVITE))
+
 
 
 def stamp(value):
@@ -74,6 +97,8 @@ class Store:
             app.say(row['phone'], 'I could not safely read that. Please resend with specific dates and start/end times.')
         with self.db:
             self.db.execute('UPDATE state SET body=? WHERE id=1', (json.dumps(state),))
+            if row['phone'] in state['blocked']:
+                self.db.execute("UPDATE outbox SET status='suppressed' WHERE phone=? AND status='pending'", (row['phone'],))
             self.save_messages(app.messages)
             self.db.execute("UPDATE inbox SET status='done' WHERE sid=?", (row['sid'],))
         return True
@@ -104,9 +129,13 @@ class Scheduler:
     def __init__(self, state, parser, now):
         self.state, self.parser, self.now = state, parser, now
         self.messages = []
+        self.state.setdefault('consents', {})
+        self.state.setdefault('consent_log', [])
 
     def say(self, phone, body, event=None):
-        if phone not in self.state['blocked']:
+        if permitted_message(self.state, phone, body):
+            if not body.startswith('Work Wife'):
+                body = 'Work Wife: ' + body
             self.messages.append((phone, body, event['code'] if event else None,
                                   event['version'] if event else None))
 
@@ -139,10 +168,17 @@ class Scheduler:
         e['slot'], e['status'] = slot, 'proposed'
         self.broadcast(e, f"A time works for everyone: {self.details(e)}. Reply {e['code']} YES to confirm or NO if it no longer works.")
 
+    def record_consent(self, phone, status):
+        record = {'status': status, 'at': self.now.isoformat(), 'version': CONSENT_VERSION}
+        self.state['consents'][phone] = record
+        self.state['consent_log'].append({'phone': phone, **record})
+
     def receive(self, phone, body):
         body = body.strip()
         upper = body.upper()
+        consent = self.state['consents'].get(phone, {})
         if upper in ('STOP', 'STOPALL', 'UNSUBSCRIBE', 'END', 'QUIT', 'REVOKE', 'OPTOUT'):
+            self.record_consent(phone, 'withdrawn')
             if phone not in self.state['blocked']:
                 self.state['blocked'].append(phone)
             for e in self.state['events'].values():
@@ -152,12 +188,32 @@ class Scheduler:
             return  # The messaging provider supplies the standard opt-out response.
         if upper in ('START', 'UNSTOP'):
             self.state['blocked'] = [p for p in self.state['blocked'] if p != phone]
-            self.say(phone, 'Messages enabled. Text your plan code to rejoin a plan. Reply STOP to opt out.')
+            self.record_consent(phone, 'pending')
+            self.say(phone, WELCOME)
             return
         if phone in self.state['blocked']:
             return
         if upper == 'HELP':
-            self.say(phone, 'Mom Household: describe a plan or text its code and your availability. YES confirms; NO declines; STATUS shows your plans. STOP opts out.')
+            self.say(phone, HELP)
+            return
+        if upper == 'JOIN':
+            if enrolled(self.state, phone):
+                self.say(phone, ENROLLED)
+            else:
+                self.record_consent(phone, 'pending')
+                self.say(phone, WELCOME)
+            return
+        if upper == 'Y':
+            if consent.get('status') == 'pending' and self.now - stamp(consent['at']) <= timedelta(hours=24):
+                self.record_consent(phone, 'enrolled')
+                self.say(phone, ENROLLED)
+            elif enrolled(self.state, phone):
+                self.say(phone, ENROLLED)
+            else:
+                self.say(phone, INVITE)
+            return
+        if not enrolled(self.state, phone):
+            self.say(phone, INVITE)
             return
         events = self.state['events']
         tokens = upper.split()
@@ -221,7 +277,7 @@ class Scheduler:
             self.state['drafts'].pop(phone, None)
             from transport import phone_number
             number = phone_number() or '[scheduling number]'
-            self.say(phone, f"[{code}] {e['title']} for {count} adults replying, {minutes} min. Times: {e['timezone']}. Forward: Text {code} and when you're free to {number}. Reply STOP to opt out.")
+            self.say(phone, f"[{code}] {e['title']} for {count} adults replying, {minutes} min. Times: {e['timezone']}. Forward: Enroll at {SITE_URL}, then text {code} and when you're free to {number}. Reply STOP to opt out.")
             if not parsed.get('windows'):
                 self.say(phone, f"[{code}] When are you free? Tell me dates and a time range in your own words.")
                 return

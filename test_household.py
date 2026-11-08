@@ -24,6 +24,12 @@ class SchedulingTests(unittest.TestCase):
     def setUp(self):
         self.store = Store(':memory:')
         self.counter = 0
+        for person in ('alex', 'sarah', 'jess'):
+            self.text(person, 'JOIN')
+            self.text(person, 'Y')
+        self.store.db.execute('DELETE FROM inbox')
+        self.store.db.execute('DELETE FROM outbox')
+        self.store.db.commit()
 
     def tearDown(self):
         self.store.db.close()
@@ -145,6 +151,9 @@ class SchedulingTests(unittest.TestCase):
     def test_persistence(self):
         with tempfile.TemporaryDirectory() as folder:
             store = Store(folder + '/db')
+            for sid, message in [('join', 'JOIN'), ('confirm', 'Y')]:
+                store.enqueue(sid, 'alex', message)
+                store.process(None, NOW)
             store.enqueue('one', 'alex', 'Plan')
             store.process(lambda *_: create(), NOW)
             store.db.close()

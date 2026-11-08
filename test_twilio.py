@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 from twilio.request_validator import RequestValidator
 import test_cloud
-from household import Store
+from household import Store, HELP
 from server import Handler
 from cloud import SMSHandler
 from twilio_sms import verify, decode, send
@@ -67,6 +67,18 @@ class TwilioTests(unittest.TestCase):
         self.assertEqual(params['Body'],['Hello'])
         self.assertEqual(params['From'],[ENV['TWILIO_PHONE_NUMBER']])
 
+    def test_service_sender_and_invalid_service(self):
+        with patch.dict(os.environ, {'TWILIO_MESSAGING_SERVICE_SID': 'MG'+'c'*32}):
+            with patch('twilio_sms.urlopen', return_value=io.BytesIO(json.dumps({'sid':SID}).encode())) as request:
+                send('+15555550102', 'Hello')
+            self.assertEqual(parse_qs(request.call_args.args[0].data.decode())['MessagingServiceSid'], ['MG'+'c'*32])
+        with patch.dict(os.environ, {'TWILIO_MESSAGING_SERVICE_SID': 'wrong'}):
+            with self.assertRaises(ValueError):
+                send('+15555550102', 'Hello')
+
+    def test_provider_help_does_not_send_duplicate_response(self):
+        self.assertEqual(decode(urlencode(incoming(OptOutType='HELP', Body='HELP')).encode())[0], 'ignored')
+
     def test_default_provider_and_invitation_number(self):
         with patch.dict(os.environ,ENV):
             os.environ.pop('SMS_PROVIDER')
@@ -106,7 +118,7 @@ class SendLimitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'SMS_SEND_LIMIT':'1'}):
             store = Store(folder+'/db')
             with store.db:
-                store.db.execute("INSERT INTO outbox(phone,body) VALUES('alex','one'),('alex','two')")
+                store.db.execute("INSERT INTO outbox(phone,body) VALUES('alex','" + HELP + "'),('alex','" + HELP + "')")
             def fail(*args):
                 raise TimeoutError()
             self.assertTrue(deliver(store, fail))
@@ -123,7 +135,7 @@ class SendLimitTests(unittest.TestCase):
         store = Store(':memory:')
         self.addCleanup(store.db.close)
         with store.db:
-            store.db.execute("INSERT INTO outbox(phone,body) VALUES('alex','one')")
+            store.db.execute("INSERT INTO outbox(phone,body) VALUES('alex','" + HELP + "')")
         with patch.dict(os.environ, {'SMS_SEND_LIMIT':'0'}), patch('transport.send') as sender:
             self.assertFalse(deliver(store,sender))
             sender.assert_not_called()

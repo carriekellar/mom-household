@@ -51,6 +51,8 @@ def decode(raw):
             raise ValueError('Message too long')
         # Advanced Opt-Out can use configurable keywords. Map provider events to
         # our canonical commands so local suppression matches Twilio's state.
+        if p.get('OptOutType') == 'HELP':
+            return ('ignored', sid, None, None)  # Twilio already sent the configured HELP response.
         body = {'STOP': 'STOP', 'START': 'START', 'HELP': 'HELP'}.get(p.get('OptOutType'), body)
         return ('received', sid, number(p['From']), body)
     if status in ('delivered', 'undelivered', 'failed', 'canceled'):
@@ -69,6 +71,11 @@ def send(phone, text):
     credentials = base64.b64encode((account + ':' + os.environ['TWILIO_AUTH_TOKEN']).encode()).decode()
     body = {'From': number(os.environ['TWILIO_PHONE_NUMBER']), 'To': number(phone),
             'Body': text, 'StatusCallback': webhook_url()}
+    service = os.getenv('TWILIO_MESSAGING_SERVICE_SID', '')
+    if service:
+        if not re.fullmatch(r'MG[0-9a-fA-F]{32}', service):
+            raise ValueError('Invalid Messaging Service SID')
+        body['MessagingServiceSid'] = service
     req = Request(f'https://api.twilio.com/2010-04-01/Accounts/{account}/Messages.json',
                   data=urlencode(body).encode(), headers={'Authorization': 'Basic ' + credentials,
                   'Content-Type': 'application/x-www-form-urlencoded'})
