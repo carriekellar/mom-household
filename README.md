@@ -267,3 +267,42 @@ view those details; share it only with intended participants. Ordinary invitatio
 and old short codes do not grant calendar-download access. Offline demo links are simulated
 and are not registered in the hosted database. SQLite-only deployments do not serve the
 hosted download endpoint; the export feature is intended for Vercel + Supabase.
+
+## Sendblue pilot
+
+The optional `SMS_PROVIDER=sendblue` adapter uses `SENDBLUE_API_KEY_ID`,
+`SENDBLUE_API_SECRET_KEY`, `SENDBLUE_PHONE_NUMBER`, and `SENDBLUE_WEBHOOK_SECRET`.
+Keep credentials in ignored `.env` and private Vercel variables. Configure both
+`receive` and `outbound` account webhooks to POST to the app's `/sms` endpoint,
+using the same per-webhook secret. The adapter verifies `sb-signing-secret`
+before database access and pins the sending/receiving line. Group messages and
+reactions are ignored. Webhook message IDs are namespaced and deduplicated.
+
+Free shared-line accounts require verified contacts: add a test contact in
+Sendblue and have that person message the assigned line first. Work Wife still
+requires JOIN then Y to enroll. Sendblue handles carrier opt-outs; bare CANCEL
+or OPT OUT also revoke enrollment. Use CANCEL PLAN for an event cancellation.
+Confirm the provider's STOP acknowledgement during the first consented pilot.
+
+Every outbound send checks iMessage support and stops on SMS/unknown results.
+Ordinary Sendblue sends can still downgrade after that lookup; this is not a
+blue-bubble guarantee. Lookup quotas apply. A failed lookup/send goes to
+`needs_review`, never automatic resend. Inspect the provider before retrying.
+
+Native inline plan routing is not implemented yet. On V2 lines Sendblue supports
+`reply_to` and `thread_originator`, but this version safely responds with the
+plan picker when an inline reply arrives rather than applying YES/NO to a
+potentially different active plan. Use readable invitations once and PLANS to
+switch, followed by ordinary replies. Separate top-level iMessage conversations
+per plan are not created by this adapter.
+
+Before provider cutover, pause processing and ensure there are no pending inbox
+or outbox records or unsettled sends. The queue is shared across providers.
+Deploy tested code and secrets, register authenticated Sendblue webhooks, then
+switch SMS_PROVIDER and resume the worker. Never use a production process call
+as a read-only health check: it can send queued messages.
+
+References: [Sendblue webhooks](https://docs.sendblue.com/getting-started/webhooks/),
+[webhook authentication](https://docs.sendblue.com/security/),
+[iMessage lookup](https://docs.sendblue.com/guides/check-imessage-support/),
+[inline replies](https://docs.sendblue.com/guides/inline-replies/).

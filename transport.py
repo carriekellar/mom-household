@@ -17,6 +17,9 @@ def verify(raw, headers, public_key, now=None):
 
 
 def send(phone, text):
+    if provider() == "sendblue":
+        from sendblue_sms import send as sendblue_send
+        return sendblue_send(phone, text)
     if provider() == "twilio":
         from twilio_sms import send as twilio_send
         return twilio_send(phone, text)
@@ -64,12 +67,15 @@ def deliver(store, sender=send):
 
 def provider():
     value = os.getenv('SMS_PROVIDER', 'twilio')
-    if value not in ('twilio', 'plivo', 'telnyx'):
+    if value not in ('twilio', 'plivo', 'telnyx', 'sendblue'):
         raise ValueError('Unknown SMS_PROVIDER')
     return value
 
 
 def verify_webhook(raw, headers):
+    if provider() == "sendblue":
+        from sendblue_sms import verify as sendblue_verify
+        return sendblue_verify(raw, headers)
     if provider() == 'twilio':
         from twilio_sms import verify as twilio_verify
         return twilio_verify(raw, headers)
@@ -81,6 +87,9 @@ def verify_webhook(raw, headers):
 
 
 def decode_webhook(raw):
+    if provider() == "sendblue":
+        from sendblue_sms import decode
+        return decode(raw)
     if provider() == 'twilio':
         from twilio_sms import decode
         return decode(raw)
@@ -109,6 +118,7 @@ def phone_number():
 
 def required_settings():
     return {
+        'sendblue': ['SENDBLUE_API_KEY_ID', 'SENDBLUE_API_SECRET_KEY', 'SENDBLUE_PHONE_NUMBER', 'SENDBLUE_WEBHOOK_SECRET'],
         'twilio': ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WEBHOOK_URL'],
         'plivo': ['PLIVO_AUTH_ID', 'PLIVO_AUTH_TOKEN', 'PLIVO_PHONE_NUMBER', 'PLIVO_WEBHOOK_URL'],
         'telnyx': ['TELNYX_API_KEY', 'TELNYX_PUBLIC_KEY', 'TELNYX_PHONE_NUMBER'],
