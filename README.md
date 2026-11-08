@@ -10,8 +10,10 @@ to confirm, sends reminders, and handles cancellations.
 
 Backend prototype with Twilio texting, availability matching, confirmations, reminders, and
 cancellations. Vercel handlers and Supabase Postgres persistence are implemented; the local
-SQLite demo remains available. Twilio is the default provider; the Work Wife number and messaging service are provisioned. **Not yet deployed or verified
-with live group texting.** Live provider credentials, registration, hosting, and an OpenAI extraction check remain required.
+SQLite demo remains available. Twilio is the default provider; the Work Wife number and messaging service are provisioned. **Deployed, but not yet verified with live group texting.** The SMS endpoint is
+https://work-wife-app.vercel.app/sms; the dedicated Work Wife Supabase database and minute
+worker are configured. OpenAI extraction was verified with a synthetic request. Carrier
+registration is in progress, and a consenting-group acceptance test remains required.
 
 ## Try the offline demo
 
@@ -234,3 +236,9 @@ provider's actual keyword settings before a live pilot.
 The public policies remain drafts pending retention decisions and live acceptance testing.
 The consent code is implemented and covered by SQLite and Postgres tests; this is not a
 claim that carrier registration or end-to-end delivery is complete.
+
+Deployment verification (November 8, 2026): public health returns 200; unsigned SMS returns
+403; unauthorized worker returns 401; authorized worker against an empty database returns
+200. Explicit `handler` classes in `api/` are necessary for Vercel to discover all functions;
+import aliases alone were skipped by the deployed build. Supabase project: `czfqmelgorakcqvdfrgd`.
+The cron job remains named `mom-household-process` internally for continuity.

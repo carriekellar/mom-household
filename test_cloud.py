@@ -10,7 +10,8 @@ from urllib.request import Request, urlopen
 from unittest.mock import patch
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
-from cloud import SMSHandler, ProcessHandler
+from api.sms import handler as SMSHandler
+from api.process import handler as ProcessHandler
 
 
 class CloudSecurityTests(unittest.TestCase):

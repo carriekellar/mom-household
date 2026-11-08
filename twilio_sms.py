@@ -53,7 +53,10 @@ def decode(raw):
         # our canonical commands so local suppression matches Twilio's state.
         if p.get('OptOutType') == 'HELP':
             return ('ignored', sid, None, None)  # Twilio already sent the configured HELP response.
-        body = {'STOP': 'STOP', 'START': 'START', 'HELP': 'HELP'}.get(p.get('OptOutType'), body)
+        if p.get('OptOutType') == 'STOP':
+            body = 'STOP'
+        elif p.get('OptOutType') == 'START' and body.strip().upper() not in ('YES', 'Y', 'JOIN'):
+            body = 'START'  # Keep application enrollment and RSVP commands distinct.
         return ('received', sid, number(p['From']), body)
     if status in ('delivered', 'undelivered', 'failed', 'canceled'):
         if number(p['From']) != number(os.environ['TWILIO_PHONE_NUMBER']):

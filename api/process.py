@@ -1,1 +1,6 @@
-from cloud import ProcessHandler as handler
+from cloud import ProcessHandler
+
+
+class handler(ProcessHandler):
+    def do_POST(self):
+        return super().do_POST()

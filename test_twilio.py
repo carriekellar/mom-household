@@ -11,7 +11,7 @@ from twilio.request_validator import RequestValidator
 import test_cloud
 from household import Store, HELP
 from server import Handler
-from cloud import SMSHandler
+from api.sms import handler as SMSHandler
 from twilio_sms import verify, decode, send
 from transport import provider, phone_number
 
@@ -75,6 +75,10 @@ class TwilioTests(unittest.TestCase):
         with patch.dict(os.environ, {'TWILIO_MESSAGING_SERVICE_SID': 'wrong'}):
             with self.assertRaises(ValueError):
                 send('+15555550102', 'Hello')
+
+    def test_provider_start_signal_preserves_rsvp_and_application_enrollment(self):
+        for body in ('YES', 'Y', 'JOIN'):
+            self.assertEqual(decode(urlencode(incoming(OptOutType='START', Body=body)).encode())[-1], body)
 
     def test_provider_help_does_not_send_duplicate_response(self):
         self.assertEqual(decode(urlencode(incoming(OptOutType='HELP', Body='HELP')).encode())[0], 'ignored')
