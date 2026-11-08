@@ -206,7 +206,11 @@ Preview with `python3 -m http.server 8765 --directory public`. Vercel serves `pu
 with aliases `/opt-in`, `/privacy`, and `/terms`; the existing Python API rewrites remain.
 These pages are drafts, not evidence of a live opt-in system. Before registration, finalize
 retention and provider details, implement and test enrollment and keyword responses,
-replace `[SITE URL]` with the deployed origin, and review policies with the operator.
+confirm the published policy URLs, and review policies with the operator.
 Only remove draft notices when the described behavior is actually available. Support is
 `carrie@candur.ai`; the operator is Carrington Hay Kellar. No SMS flow or provider settings
 are changed by these static pages.
+
+Draft pages are published at https://work-wife-registration.vercel.app in the
+`thecarringtonevent/work-wife-registration` Vercel project. This standalone static
+deployment contains only `public/` and does not deploy the scheduler or credentials.
