@@ -245,11 +245,13 @@ The cron job remains named `mom-household-process` internally for continuity.
 
 ## Readable invitations, remembered plans, and calendar files
 
-New plans receive a title-based invitation name, for example
-`park-playdate-maple-river-48271`. The random suffix avoids collisions and keeps invitations
-harder to guess. Existing short codes still work. A participant supplies the invitation
-name once; the service remembers that plan for later messages. `PLANS` lists active plans;
-text an invitation name, `SWITCH <invitation name>`, or an unambiguous title to change plans.
+New plans receive a six-digit numeric invitation, sent in a message containing only the
+code, followed by a separate invitation to copy into a group chat. Existing long invitations
+remain valid. Participants can send a code first; unenrolled participants receive the normal
+consent disclosure, and replying Y resumes that invitation and any supplied availability.
+No plan membership or AI processing occurs before consent. STOP clears pending invitations;
+pending consent expires after 24 hours. Participants enter the code once, then reply normally.
+`PLANS` lists active plans; a code, `SWITCH <code>`, or an unambiguous title switches context.
 `NEW ...` starts a separate plan. Canceled/ended selections never silently redirect a reply
 to another plan. A notification from another plan clears an ambiguous selection and asks
 for a choice rather than assuming which event a YES refers to.
@@ -308,3 +310,26 @@ References: [Sendblue webhooks](https://docs.sendblue.com/getting-started/webhoo
 [inline replies](https://docs.sendblue.com/guides/inline-replies/).
 
 New plan invitations use six numeric digits (for example, `482719`). Codes remain unique across stored plans and legacy IDs. Existing long invitations remain valid; participants still only enter a code once and use PLANS to switch.
+
+
+## Date-range and multi-day scheduling
+
+New plans infer timed versus calendar-date scheduling and activity separately. Timed events
+retain 15–240 minute durations. Date plans support 1–30 calendar days or nights within the
+90-day availability horizon. Two nights require three available calendar dates. Date ranges
+are inclusive; calendar files use an exclusive end date. The matcher requires a consecutive
+shared block, never invents departure times, and uses local calendar arithmetic across DST.
+All participants still explicitly confirm. Tentative availability is labeled as such.
+
+The AI receives prior clarification, current availability, group facts, and a 90-day calendar.
+Date additions/removals are applied as set operations by application code. Date plans receive
+one reminder at 9am in the plan timezone the day before; timed events retain 24h/1h reminders.
+Calendar downloads for date plans are all-day entries and do not automatically sync updates.
+Existing plans retain their original mode; recreate incorrectly interpreted legacy trip plans
+with NEW rather than silently changing already shared plans.
+
+The default extractor is gpt-4.1: the prior gpt-4o-mini failed synthetic weekday and correction
+checks. Run `python eval_scheduling.py` explicitly for six synthetic OpenAI acceptance cases
+(API usage applies; it never sends messages or writes the database). Unit tests use fixtures.
+No recurring plans, automatic preference ranking, native iMessage thread routing, or automatic
+conversion of existing timed plans is included in this release.

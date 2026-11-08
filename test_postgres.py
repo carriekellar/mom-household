@@ -117,3 +117,16 @@ class PostgresTests(unittest.TestCase):
         self.assertEqual(self.store.load()['consents']['new']['status'], 'enrolled')
         self.store.deliver(lambda p,b: sent.append(b) or 'confirmed')
         self.assertEqual(sent[-1], ENROLLED)
+
+    def test_date_plan_code_first_and_local_morning_reminder(self):
+        from test_date_plans import trip
+        self.text('alex','Two day trip',trip(expected=2))
+        code=next(iter(self.store.load()['events']))
+        self.text('new',code+' November 28-29')
+        self.assertNotIn('new',self.store.load()['events'][code]['members'])
+        self.text('new','Y',dict(intent='availability',date_windows=[['2026-11-28','2026-11-29']]))
+        for person in ('alex','new'): self.text(person,'YES')
+        self.store.remind(datetime(2026,11,27,14,tzinfo=UTC))
+        self.store.remind(datetime(2026,11,27,14,tzinfo=UTC))
+        self.assertEqual(self.store.db.execute("SELECT count(*) AS n FROM outbox WHERE body LIKE '%Reminder:%'").fetchone()['n'],2)
+        self.assertEqual(self.store.db.execute('SELECT body FROM outbox ORDER BY id LIMIT 1').fetchone()['body'],code)

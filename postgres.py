@@ -6,6 +6,7 @@ import psycopg
 from psycopg.rows import dict_row
 from household import Scheduler, stamp, permitted_message, label
 from transport import send, send_limit
+from plan_dates import reminder_schedule
 
 
 class PostgresStore:
@@ -57,7 +58,7 @@ class PostgresStore:
         except (ValueError, KeyError, TypeError):
             state = self.load()
             app = Scheduler(state, parser, now)
-            app.say(row['phone'], 'I could not safely read that. Please resend with specific dates and start/end times.')
+            app.say(row['phone'], 'I could not safely read that. Please restate which dates work; include start/end times only for a timed event.')
         except Exception:
             self.db.execute("UPDATE inbox SET attempts=attempts+1, status=CASE WHEN attempts>=2 THEN 'needs_review' ELSE 'pending' END WHERE sid=%s", (row['sid'],))
             raise
@@ -74,10 +75,9 @@ class PostgresStore:
         for event in state['events'].values():
             if event['status'] != 'confirmed':
                 continue
-            remaining = (stamp(event['slot']) - now).total_seconds()
-            for hours in (24, 1):
-                key = f"{event['version']}:{hours}"
-                if hours * 3600 - 900 <= remaining <= hours * 3600 and key not in event['reminders']:
+            for kind, due in reminder_schedule(event):
+                key = f"{event['version']}:{kind}"
+                if 0 <= (now - due).total_seconds() <= 900 and key not in event['reminders']:
                     app.broadcast(event, f"Reminder: {app.details(event)}. Can't make it? Reply that you can't come. To switch to this plan, text {label(event)}.")
                     event['reminders'].append(key)
         with self.db.transaction():

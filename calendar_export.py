@@ -5,6 +5,8 @@ from datetime import timedelta
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlsplit
 from household import stamp
+from plan_dates import date_plan, event_end
+from zoneinfo import ZoneInfo
 from postgres import PostgresStore
 
 
@@ -25,13 +27,17 @@ def fold(line):
 
 def calendar_bytes(event):
     start = stamp(event['slot'])
-    end = start + timedelta(minutes=event['minutes'])
+    end = event_end(event)
+    if date_plan(event):
+        start = start.astimezone(ZoneInfo(event['timezone']))
+        dates = ['DTSTART;VALUE=DATE:' + start.strftime('%Y%m%d'), 'DTEND;VALUE=DATE:' + end.strftime('%Y%m%d')]
+    else:
+        dates = ['DTSTART:' + start.strftime('%Y%m%dT%H%M%SZ'), 'DTEND:' + end.strftime('%Y%m%dT%H%M%SZ')]
     lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Work Wife//Scheduling//EN',
              'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
              f"UID:{event['calendar_token']}@work-wife-app.vercel.app",
              'DTSTAMP:' + stamp(event.get('calendar_generated_at', event['slot'])).strftime('%Y%m%dT%H%M%SZ'),
-             'DTSTART:' + start.strftime('%Y%m%dT%H%M%SZ'),
-             'DTEND:' + end.strftime('%Y%m%dT%H%M%SZ'),
+             *dates,
              'SEQUENCE:' + str(event['version']),
              'SUMMARY:' + escape(event['title']), 'LOCATION:' + escape(event['location']),
              'DESCRIPTION:' + escape('Planned with Work Wife. Updates arrive by SMS; this saved event does not sync automatically.'),
