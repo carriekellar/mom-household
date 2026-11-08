@@ -34,7 +34,7 @@ def calendar_bytes(event):
              'DTEND:' + end.strftime('%Y%m%dT%H%M%SZ'),
              'SEQUENCE:' + str(event['version']),
              'SUMMARY:' + escape(event['title']), 'LOCATION:' + escape(event['location']),
-             'DESCRIPTION:Planned with Work Wife. Updates arrive by SMS; this saved event does not sync automatically.',
+             'DESCRIPTION:' + escape('Planned with Work Wife. Updates arrive by SMS; this saved event does not sync automatically.'),
              'STATUS:CONFIRMED', 'END:VEVENT', 'END:VCALENDAR']
     return ('\r\n'.join(fold(line) for line in lines) + '\r\n').encode()
 
